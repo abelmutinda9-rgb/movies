@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: movies-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: TMDB_API_KEY
+        sync: false
