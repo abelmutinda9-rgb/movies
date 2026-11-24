@@ -1,3 +1,5 @@
+import { animeExtract } from "../anime.js";
+import { africanExtract } from "../african.js";
 import { Router } from "express";
 import { Readable } from "stream";
 import { tmdb } from "../tmdb.js";
@@ -87,6 +89,26 @@ router.get("/stream/tv/:tmdbId/:season/:episode", async (req, res) => {
   const { tmdbId, season, episode } = req.params;
   try {
     res.json({ streams: await scrape("tv", tmdbId, season, episode) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/stream/anime/:title/:episode", async (req, res) => {
+  const { title, episode } = req.params;
+  try {
+    const streams = await animeExtract("tv", null, 1, episode, title);
+    res.json({ streams });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/stream/african/:title", async (req, res) => {
+  const { title } = req.params;
+  try {
+    const streams = await africanExtract("movie", null, 1, 1, title);
+    res.json({ streams });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
