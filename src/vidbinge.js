@@ -6,13 +6,13 @@ export async function vidbingeExtract(type, tmdbId, season, episode) {
   try {
     const isTV = type !== "movie";
     const path = isTV
-      ? 
-      : ;
+      ? `${BASE}/api/tv/${tmdbId}/${season}/${episode}`
+      : `${BASE}/api/movie/${tmdbId}`;
 
     const res = await fetch(path, {
       headers: {
         "User-Agent": UA,
-        Referer: ,
+        Referer: `${BASE}/`,
         Accept: "application/json",
       },
       signal: AbortSignal.timeout(10000),
@@ -29,8 +29,8 @@ export async function vidbingeExtract(type, tmdbId, season, episode) {
           url: src.url,
           type: src.type === "hls" || src.url.includes(".m3u8") ? "hls" : "file",
           provider: "vidbinge",
-          providerName: .trim(),
-          headers: { Referer: , "User-Agent": UA },
+          providerName: `VidBinge ${src.quality || ""}`.trim(),
+          headers: { Referer: `${BASE}/`, "User-Agent": UA },
         });
       }
     }
