@@ -1,3 +1,7 @@
+import { moviesapiExtract } from "./moviesapi.js";
+import { primesrcExtract } from "./primesrc.js";
+import { animeExtract } from "./anime.js";
+import { africanExtract } from "./african.js";
 import { cinesrcExtract } from "./cinesrc.js";
 import { vidsparkExtract } from "./vidspark.js";
 import { vixsrcExtract } from "./vixsrc.js";
@@ -213,6 +217,10 @@ const PROVIDERS = [
   },
   // MovieBox mp4s, mostly HEVC (labelled), so they sit late in the fallback order
   { id: "vidlink", name: "VidLink", extract: vidlinkExtract },
+  { id: "moviesapi", name: "MoviesAPI", extract: moviesapiExtract },
+  { id: "primesrc", name: "PrimeSrc", extract: primesrcExtract },
+  { id: "anime", name: "Anime (Gogo)", extract: animeExtract },
+  { id: "african", name: "African / Nollywood", extract: africanExtract },
 ];
 
 
