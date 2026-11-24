@@ -1,3 +1,5 @@
+import { embedsuExtract } from "./embedsu.js";
+import { vidbingeExtract } from "./vidbinge.js";
 import { moviesapiExtract } from "./moviesapi.js";
 import { primesrcExtract } from "./primesrc.js";
 import { animeExtract } from "./anime.js";
@@ -219,6 +221,8 @@ const PROVIDERS = [
   { id: "vidlink", name: "VidLink", extract: vidlinkExtract },
   { id: "moviesapi", name: "MoviesAPI", extract: moviesapiExtract },
   { id: "primesrc", name: "PrimeSrc", extract: primesrcExtract },
+  { id: "embedsu", name: "EmbedSu", extract: embedsuExtract },
+  { id: "vidbinge", name: "VidBinge", extract: vidbingeExtract },
   { id: "anime", name: "Anime (Gogo)", extract: animeExtract },
   { id: "african", name: "African / Nollywood", extract: africanExtract },
 ];
