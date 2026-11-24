@@ -6,8 +6,8 @@ export async function embedsuExtract(type, tmdbId, season, episode) {
   try {
     const isTV = type !== "movie";
     const embedUrl = isTV
-      ? 
-      : ;
+      ? `${BASE}/embed/tv/${tmdbId}/${season}/${episode}`
+      : `${BASE}/embed/movie/${tmdbId}`;
 
     const res = await fetch(embedUrl, {
       headers: {
@@ -38,7 +38,7 @@ export async function embedsuExtract(type, tmdbId, season, episode) {
     }
 
     const hash = hashMatch[1];
-    const apiRes = await fetch(, {
+    const apiRes = await fetch(`${BASE}/api/e/${hash}`, {
       headers: {
         "User-Agent": UA,
         Referer: embedUrl,
@@ -59,7 +59,7 @@ export async function embedsuExtract(type, tmdbId, season, episode) {
           url: streamUrl,
           type: streamUrl.includes(".m3u8") ? "hls" : "file",
           provider: "embedsu",
-          providerName: ,
+          providerName: `EmbedSu (${s.name || s.label || "HLS"})`,
           headers: { Referer: BASE + "/", "User-Agent": UA },
         });
       }
