@@ -8,6 +8,7 @@ import { listPstream, pstreamTasks } from "../pstream.js";
 import { movieboxSearch } from "../moviebox.js";
 import { streamwishExtractUrl } from "../streamwish.js";
 import { voeExtractUrl } from "../voe.js";
+import { getSubtitles, srtToVtt } from "../subtitles.js";
 
 const router = Router();
 
@@ -17,6 +18,12 @@ const UA =
 router.get("/sources", (_req, res) => {
   res.json({
     custom: PROVIDERS.map(({ id, name }) => ({ id, name })),
+    features: {
+      subtitles: true,
+      tmdbFallback: true,
+      proxy: true,
+      embedResolver: true,
+    },
     ...listPstream(),
   });
 });
@@ -26,36 +33,99 @@ router.get("/search/:type", async (req, res) => {
   const { query, page } = req.query;
   if (!query) return res.status(400).json({ error: "query required" });
 
-  if (type === "multi") {
-    res.json(await tmdb("/search/multi", { query, page }));
-  } else {
-    res.json(await tmdb(`/search/${type}`, { query, page }));
+  try {
+    if (type === "multi") {
+      res.json(await tmdb("/search/multi", { query, page }));
+    } else {
+      res.json(await tmdb(`/search/${type}`, { query, page }));
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
 router.get("/trending/:type/:window", async (req, res) => {
   const { type, window } = req.params;
-  res.json(await tmdb(`/trending/${type}/${window}`, { page: req.query.page }));
+  try {
+    res.json(await tmdb(`/trending/${type}/${window}`, { page: req.query.page }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 router.get("/movie/:id", async (req, res) => {
-  res.json(
-    await tmdb(`/movie/${req.params.id}`, {
-      append_to_response: "credits,similar,videos",
-    }),
-  );
+  try {
+    res.json(
+      await tmdb(`/movie/${req.params.id}`, {
+        append_to_response: "credits,similar,videos",
+      }),
+    );
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 router.get("/tv/:id", async (req, res) => {
-  res.json(
-    await tmdb(`/tv/${req.params.id}`, {
-      append_to_response: "credits,similar,videos",
-    }),
-  );
+  try {
+    res.json(
+      await tmdb(`/tv/${req.params.id}`, {
+        append_to_response: "credits,similar,videos",
+      }),
+    );
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 router.get("/tv/:id/season/:season", async (req, res) => {
-  res.json(await tmdb(`/tv/${req.params.id}/season/${req.params.season}`));
+  try {
+    res.json(await tmdb(`/tv/${req.params.id}/season/${req.params.season}`));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Subtitles endpoints
+router.get("/subtitles/movie/:id", async (req, res) => {
+  try {
+    const subtitles = await getSubtitles("movie", req.params.id);
+    res.json({ subtitles });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/subtitles/tv/:id/:season/:episode", async (req, res) => {
+  const { id, season, episode } = req.params;
+  try {
+    const subtitles = await getSubtitles("tv", id, Number(season), Number(episode));
+    res.json({ subtitles });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// VTT subtitle converter / proxy for CORS and player compatibility
+router.get("/subtitles/vtt", async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).send("url required");
+  if (!isSafeUrl(url)) return res.status(403).send("invalid URL");
+
+  try {
+    const upstream = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!upstream.ok) return res.status(upstream.status).send("Failed to fetch subtitle");
+
+    const text = await upstream.text();
+    const vtt = srtToVtt(text);
+    res.setHeader("Content-Type", "text/vtt; charset=utf-8");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.send(vtt);
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
 });
 
 // Cache for settled streams
