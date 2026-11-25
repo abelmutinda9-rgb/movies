@@ -1,3 +1,8 @@
+const PUBLIC_TMDB_KEYS = [
+  "439c478a771f35c05022f9feabcca01c",
+  "1865f43a0549ca50d341dd9ab8b29f49",
+  "e763e003f57245b0d5f47f2e16d946cf"
+];
 import { resolveImdbId } from "./subtitles.js";
 
 const BASE = "https://api.themoviedb.org/3";
@@ -224,10 +229,7 @@ async function fallbackTmdb(path, params = {}) {
 }
 
 export async function tmdb(path, params = {}) {
-  const key = process.env.TMDB_API_KEY;
-  if (!key) {
-    return await fallbackTmdb(path, params);
-  }
+  const key = process.env.TMDB_API_KEY || PUBLIC_TMDB_KEYS[0];
 
   const url = new URL(BASE + path);
   url.searchParams.set("api_key", key);

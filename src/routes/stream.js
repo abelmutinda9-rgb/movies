@@ -206,6 +206,72 @@ router.get("/moviebox/search", async (req, res) => {
   }
 });
 
+
+// Cinemeta Global CDN Catalog (Zero-key alternative to TMDB)
+router.get("/catalog/top/:type", async (req, res) => {
+  const type = req.params.type === "tv" || req.params.type === "series" ? "series" : "movie";
+  try {
+    const upstream = await fetch(`https://cinemeta-catalogs.strem.io/top/catalog/${type}/top.json`, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(7000),
+    });
+    if (!upstream.ok) return res.status(upstream.status).json({ error: "Catalog fetch failed" });
+    const data = await upstream.json();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/catalog/search", async (req, res) => {
+  const { query, type = "movie" } = req.query;
+  if (!query) return res.status(400).json({ error: "query required" });
+  const cType = type === "tv" || type === "series" ? "series" : "movie";
+  try {
+    const upstream = await fetch(
+      `https://v3-cinemeta.strem.io/catalog/${cType}/top/search=${encodeURIComponent(query)}.json`,
+      {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(7000),
+      }
+    );
+    if (!upstream.ok) return res.status(upstream.status).json({ error: "Search failed" });
+    const data = await upstream.json();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Amazon / IMDb public suggestion CDN (Zero-key posters & titles)
+router.get("/imdb/search", async (req, res) => {
+  const { query } = req.query;
+  if (!query) return res.status(400).json({ error: "query required" });
+  try {
+    const firstChar = query.trim()[0].toLowerCase();
+    const targetUrl = `https://v3.sg.media-imdb.com/suggestion/${encodeURIComponent(firstChar)}/${encodeURIComponent(query)}.json`;
+    const upstream = await fetch(targetUrl, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!upstream.ok) return res.status(upstream.status).json({ error: "IMDb search failed" });
+    const data = await upstream.json();
+    const results = (data?.d || []).map((item) => ({
+      id: item.id,
+      title: item.l,
+      type: item.q,
+      year: item.y,
+      stars: item.s,
+      poster: item.i?.imageUrl || null,
+      width: item.i?.width || null,
+      height: item.i?.height || null,
+    }));
+    res.json({ results });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Embed unpacker for StreamWish and VOE links
 router.get("/resolve/embed", async (req, res) => {
   const { url } = req.query;

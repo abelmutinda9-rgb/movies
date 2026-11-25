@@ -1,3 +1,4 @@
+import { framexExtract } from "./framex.js";
 import { animeExtract } from "./anime.js";
 import { africanExtract } from "./african.js";
 import { cinesrcExtract } from "./cinesrc.js";
@@ -193,9 +194,12 @@ function firstNonEmpty(...extractors) {
 const PROVIDERS = [
   // Fast direct MP4 & HLS extractors with high uptime
   { id: "vidbolt", name: "VidBolt", extract: vidboltExtract },
+  { id: "framex", name: "FrameX (HLS)", extract: framexExtract },
   { id: "moviebox", name: "MovieBox (CDN)", extract: movieboxExtract },
   { id: "braflix", name: "BraFlix", extract: braflixExtract },
   { id: "purstream", name: "PurStream", extract: purstreamExtract },
+  { id: "anime", name: "Anime (Sub/Dub HLS)", extract: animeExtract },
+  { id: "african", name: "African / Nollywood", extract: africanExtract },
   { id: "autoembed", name: "AutoEmbed", extract: autoembedExtract },
   { id: "vidsrc", name: "VidSrc", extract: vidsrcExtract },
   { id: "xpass", name: "XPass", extract: xpassExtract },
@@ -254,7 +258,15 @@ export function upstreamHeaders(url, extra = {}) {
 // Requests are made like the proxy makes them, so "alive" means playable through it.
 // HLS is followed master -> media playlist -> first segment: hosts that pulled a title
 // often keep serving its playlists while the segments are gone or replaced.
+
+function isEmbedUrl(url) {
+  if (!url || typeof url !== "string") return true;
+  const lower = url.toLowerCase();
+  return lower.includes("/embed/") || lower.includes("/e/") || lower.includes("player.") || lower.includes("<iframe");
+}
+
 async function isAlive(stream) {
+  if (isEmbedUrl(stream.url)) return false;
   const signal = AbortSignal.timeout(CHECK_TIMEOUT);
   const get = (url, extra) => fetch(url, { headers: { ...upstreamHeaders(url, stream.headers), ...extra }, signal });
   try {

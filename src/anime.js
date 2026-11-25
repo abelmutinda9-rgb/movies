@@ -1,58 +1,48 @@
-const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+import { vidboltExtract } from "./vidbolt.js";
+import { purstreamExtract } from "./purstream.js";
+import { tmdb } from "./tmdb.js";
 
-export async function animeExtract(type, tmdbId, season, episode, title) {
+export async function animeExtract(type, tmdbId, season = 1, episode = 1, title = null) {
   try {
-    let searchTitle = title;
-    if (!searchTitle && tmdbId) {
+    let resolvedId = tmdbId;
+    if (!resolvedId && title) {
       try {
-        const tmdbKey = process.env.TMDB_API_KEY || "e763e003f57245b0d5f47f2e16d946cf";
-        const tmdbUrl = type === "movie"
-          ? `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdbKey}`
-          : `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${tmdbKey}`;
-        const res = await fetch(tmdbUrl);
-        if (res.ok) {
-          const data = await res.json();
-          searchTitle = data.name || data.title || data.original_name || data.original_title;
-        }
-      } catch {}
+        const search = await tmdb(`/search/${type === "movie" ? "movie" : "tv"}`, { query: title });
+        resolvedId = search?.results?.[0]?.id;
+      } catch (_) {}
     }
 
-    if (!searchTitle) return [];
+    if (!resolvedId) return [];
 
-    const cleanTitle = searchTitle.replace(/[^a-zA-Z0-9 ]/g, "").trim().toLowerCase();
-    const epNum = Number(episode) || 1;
+    // Parallel extraction from high-speed HLS providers that cover Anime
+    const [vidboltStreams, purStreams] = await Promise.all([
+      vidboltExtract(type, resolvedId, season, episode).catch(() => []),
+      purstreamExtract(type, resolvedId, season, episode).catch(() => []),
+    ]);
 
-    // Search Anitaku / Gogoanime mirror
-    const searchUrl = `https://anitaku.to/search.html?keyword=${encodeURIComponent(cleanTitle)}`;
-    const searchRes = await fetch(searchUrl, { headers: { "User-Agent": UA } });
-    if (!searchRes.ok) return [];
+    const out = [];
+    for (const s of vidboltStreams) {
+      // Discard any iframe or embed URLs; must be true HLS playlist
+      if (s.url && !s.url.includes("/embed/")) {
+        out.push({
+          ...s,
+          provider: "anime",
+          providerName: `Anime (${s.quality || "1080p"} HLS - Sub/Dub)`,
+        });
+      }
+    }
 
-    const searchHtml = await searchRes.text();
-    const slugMatch = searchHtml.match(/<a\s+href="\/category\/([^"]+)"/i);
-    if (!slugMatch || !slugMatch[1]) return [];
+    for (const s of purStreams) {
+      if (s.url && !s.url.includes("/embed/")) {
+        out.push({
+          ...s,
+          provider: "anime",
+          providerName: `Anime (Pulse 1080p HLS)`,
+        });
+      }
+    }
 
-    const animeSlug = slugMatch[1];
-    const episodePageUrl = `https://anitaku.to/${animeSlug}-episode-${epNum}`;
-    const epRes = await fetch(episodePageUrl, { headers: { "User-Agent": UA } });
-    if (!epRes.ok) return [];
-
-    const epHtml = await epRes.text();
-    const embedIframe = epHtml.match(/<iframe[^>]+src=["'](\/\/[^"']+|https?:\/\/[^"']*(?:playgo|stream|embtaku|anitaku)[^"']*)["']/i);
-    if (!embedIframe || !embedIframe[1]) return [];
-
-    let embedUrl = embedIframe[1];
-    if (embedUrl.startsWith("//")) embedUrl = "https:" + embedUrl;
-
-    return [
-      {
-        url: embedUrl,
-        type: "hls",
-        provider: "anime",
-        providerName: "Anime (GogoAnime)",
-        headers: { Referer: "https://anitaku.to/" },
-      },
-    ];
+    return out;
   } catch (e) {
     console.log("[anime] error:", e.message);
     return [];
