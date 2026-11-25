@@ -24,8 +24,6 @@ const EXCLUDED = new Map([
   ["animetsu", "backend.animetsu.to is a parked domain; animetsu.cc no longer resolves"],
 ]);
 
-// Per-embed cap, and how long to keep waiting for slower mirrors once one embed has produced streams
-// (some streamwish CDN nodes accept the connection and never answer, which would stall the whole source).
 const EMBED_TIMEOUT = 10000;
 const EMBED_GRACE = 1500;
 
@@ -54,31 +52,94 @@ function collectEmbeds(tasks) {
   });
 }
 
-async function buildMedia(type, tmdbId, season, episode) {
-  if (type === "movie") {
-    const d = await tmdb(`/movie/${tmdbId}`, { append_to_response: "external_ids" });
+async function fallbackMedia(type, tmdbId, season, episode) {
+  try {
+    const prop = type === "movie" ? "P4947" : "P4983";
+    const sparql = `SELECT ?imdb WHERE { ?item wdt:${prop} "${tmdbId}" . ?item wdt:P345 ?imdb }`;
+    const wRes = await fetch(
+      `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}&format=json`,
+      {
+        headers: { "User-Agent": "MoviesAPI/1.0" },
+        signal: AbortSignal.timeout(6000),
+      },
+    );
+    if (!wRes.ok) return null;
+    const wData = await wRes.json();
+    const imdbId = wData.results?.bindings?.[0]?.imdb?.value;
+    if (!imdbId) return null;
+
+    const cType = type === "movie" ? "movie" : "series";
+    const cRes = await fetch(`https://v3-cinemeta.strem.io/meta/${cType}/${imdbId}.json`, {
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!cRes.ok) return null;
+    const cData = await cRes.json();
+    const meta = cData.meta;
+    if (!meta) return null;
+
+    const releaseYear = parseInt(meta.year, 10) || new Date().getFullYear();
+    if (type === "movie") {
+      return {
+        type: "movie",
+        title: meta.name,
+        releaseYear,
+        tmdbId: String(tmdbId),
+        imdbId,
+      };
+    }
+    const ep = meta.videos?.find(
+      (v) => v.season === Number(season) && (v.episode === Number(episode) || v.number === Number(episode)),
+    );
     return {
-      type: "movie",
-      title: d.title,
-      releaseYear: new Date(d.release_date).getFullYear(),
-      tmdbId: String(d.id),
-      imdbId: d.imdb_id || d.external_ids?.imdb_id || undefined,
+      type: "show",
+      title: meta.name,
+      releaseYear,
+      tmdbId: String(tmdbId),
+      imdbId,
+      season: { number: Number(season), tmdbId: String(season) },
+      episode: { number: Number(episode), tmdbId: ep ? String(ep.id || episode) : String(episode) },
     };
+  } catch (e) {
+    console.log("[pstream] metadata fallback error:", e.message);
+    return null;
   }
-  const [show, seasonData] = await Promise.all([
-    tmdb(`/tv/${tmdbId}`, { append_to_response: "external_ids" }),
-    tmdb(`/tv/${tmdbId}/season/${season}`),
-  ]);
-  const ep = seasonData.episodes?.find((e) => e.episode_number === Number(episode));
-  return {
-    type: "show",
-    title: show.name,
-    releaseYear: new Date(show.first_air_date).getFullYear(),
-    tmdbId: String(show.id),
-    imdbId: show.external_ids?.imdb_id || undefined,
-    season: { number: Number(season), tmdbId: String(seasonData.id) },
-    episode: { number: Number(episode), tmdbId: ep ? String(ep.id) : String(episode) },
-  };
+}
+
+async function buildMedia(type, tmdbId, season, episode) {
+  if (process.env.TMDB_API_KEY) {
+    try {
+      if (type === "movie") {
+        const d = await tmdb(`/movie/${tmdbId}`, { append_to_response: "external_ids" });
+        return {
+          type: "movie",
+          title: d.title,
+          releaseYear: new Date(d.release_date).getFullYear(),
+          tmdbId: String(d.id),
+          imdbId: d.imdb_id || d.external_ids?.imdb_id || undefined,
+        };
+      }
+      const [show, seasonData] = await Promise.all([
+        tmdb(`/tv/${tmdbId}`, { append_to_response: "external_ids" }),
+        tmdb(`/tv/${tmdbId}/season/${season}`),
+      ]);
+      const ep = seasonData.episodes?.find((e) => e.episode_number === Number(episode));
+      return {
+        type: "show",
+        title: show.name,
+        releaseYear: new Date(show.first_air_date).getFullYear(),
+        tmdbId: String(show.id),
+        imdbId: show.external_ids?.imdb_id || undefined,
+        season: { number: Number(season), tmdbId: String(seasonData.id) },
+        episode: { number: Number(episode), tmdbId: ep ? String(ep.id) : String(episode) },
+      };
+    } catch (e) {
+      console.log("[pstream] tmdb error, falling back to Cinemeta:", e.message);
+    }
+  }
+
+  const fallback = await fallbackMedia(type, tmdbId, season, episode);
+  if (fallback) return fallback;
+  throw new Error("Could not resolve media metadata (set TMDB_API_KEY or check network)");
 }
 
 function convert(stream, id, name) {
@@ -88,37 +149,35 @@ function convert(stream, id, name) {
     providerName: name,
     ...(Object.keys(headers).length ? { headers } : {}),
   };
-  if (stream.type === "hls") return [{ ...base, url: stream.playlist, type: "hls" }];
-  if (stream.type === "file") {
-    return Object.entries(stream.qualities || {})
-      .filter(([, q]) => q?.url)
-      .map(([quality, q]) => ({
-        ...base,
-        url: q.url,
-        type: "file",
-        quality: quality === "unknown" ? undefined : quality + (/^\d+$/.test(quality) ? "p" : ""),
-      }));
+  if (stream.type === "hls") {
+    return [{ ...base, url: stream.playlist, type: "hls" }];
   }
-  return [];
+  return Object.entries(stream.qualities || {})
+    .filter(([, q]) => q.type === "mp4" && q.url)
+    .map(([label, q]) => ({
+      ...base,
+      url: q.url,
+      type: "file",
+      quality: `${label}p`,
+    }));
 }
 
 async function runSource(source, media) {
-  const out = await providers.runSourceScraper({ id: source.id, media });
-  const streams = (out.stream || []).flatMap((s) => convert(s, source.id, source.name));
-  if (streams.length || !out.embeds?.length) return streams;
-
-  const embedNames = new Map(providers.listEmbeds().map((e) => [e.id, e.name]));
-  return collectEmbeds(
-    out.embeds.map((e) =>
-      providers
-        .runEmbedScraper({ id: e.embedId, url: e.url })
-        .then((r) =>
-          (r.stream || []).flatMap((s) =>
-            convert(s, source.id, `${source.name} ${embedNames.get(e.embedId) || e.embedId}`),
-          ),
-        ),
-    ),
-  );
+  const res = await providers.runSourceScraper({ id: source.id, media });
+  if (res.stream) {
+    return res.stream.flatMap((s) => convert(s, source.id, source.name));
+  }
+  if (res.embeds?.length) {
+    return collectEmbeds(
+      res.embeds.map((e) =>
+        providers
+          .runEmbedScraper({ id: e.embedId, url: e.url })
+          .then((s) => convert(s.stream, source.id, `${source.name} (${e.embedId})`))
+          .catch(() => []),
+      ),
+    );
+  }
+  return [];
 }
 
 export function pstreamTasks(type) {

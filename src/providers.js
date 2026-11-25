@@ -1,24 +1,16 @@
-import { embedsuExtract } from "./embedsu.js";
-import { vidbingeExtract } from "./vidbinge.js";
-import { moviesapiExtract } from "./moviesapi.js";
-import { primesrcExtract } from "./primesrc.js";
 import { animeExtract } from "./anime.js";
 import { africanExtract } from "./african.js";
 import { cinesrcExtract } from "./cinesrc.js";
 import { vidsparkExtract } from "./vidspark.js";
-import { vixsrcExtract } from "./vixsrc.js";
 import { vidzeeExtract } from "./vidzee.js";
 import { vidrockExtract } from "./vidrock.js";
 import { twoembedExtract } from "./twoembed.js";
-import { vidfastExtract } from "./vidfast.js";
-import { vidcoreExtract } from "./vidcore.js";
-import { vidupExtract } from "./vidup.js";
 import { vidnestExtract } from "./vidnest.js";
 import { vidlinkExtract } from "./vidlink.js";
 import { vidprimeExtract } from "./vidprime.js";
-import { hexaExtract } from "./hexa.js";
 import { xpassExtract } from "./xpass.js";
 import { autoembedExtract } from "./autoembed.js";
+import { movieboxExtract } from "./moviebox.js";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -196,37 +188,22 @@ function firstNonEmpty(...extractors) {
 }
 
 const PROVIDERS = [
-  // autoembed.me is a second front door to vidsrc.sh's backend (same files, same hosts),
-  // so it's only asked when vidsrc itself comes back empty
+  // Primary fast verified HLS extractors
   { id: "vidsrc", name: "VidSrc", extract: firstNonEmpty(vidsrcExtract, autoembedExtract) },
   { id: "cinesrc", name: "CineSrc", extract: cinesrcExtract },
-  { id: "vidspark", name: "VidSpark", extract: vidsparkExtract },
-  { id: "vixsrc", name: "VixSrc", extract: vixsrcExtract },
-  { id: "vidzee", name: "VidZee", extract: vidzeeExtract },
-  { id: "vidrock", name: "VidRock", extract: vidrockExtract },
-  { id: "twoembed", name: "2Embed", extract: twoembedExtract },
-  { id: "vidnest", name: "VidNest", extract: vidnestExtract },
-  { id: "hexa", name: "Hexa", extract: hexaExtract },
-  { id: "vidprime", name: "VidPrime", extract: vidprimeExtract },
   { id: "xpass", name: "XPass", extract: xpassExtract },
-  // vidfast/vidcore/vidup are one backend behind three domains, each needing a
-  // ~150MB sandbox — try them one at a time so a rate limit on one isn't fatal
-  {
-    id: "vidfast",
-    name: "VidFast",
-    extract: firstNonEmpty(vidfastExtract, vidcoreExtract, vidupExtract),
-    timeout: HARD_DEADLINE,
-  },
-  // MovieBox mp4s, mostly HEVC (labelled), so they sit late in the fallback order
-  { id: "vidlink", name: "VidLink", extract: vidlinkExtract },
-  { id: "moviesapi", name: "MoviesAPI", extract: moviesapiExtract },
-  { id: "primesrc", name: "PrimeSrc", extract: primesrcExtract },
-  { id: "embedsu", name: "EmbedSu", extract: embedsuExtract },
-  { id: "vidbinge", name: "VidBinge", extract: vidbingeExtract },
+  { id: "vidnest", name: "VidNest", extract: vidnestExtract },
+  { id: "vidrock", name: "VidRock", extract: vidrockExtract },
+  { id: "vidzee", name: "VidZee", extract: vidzeeExtract },
+  { id: "twoembed", name: "2Embed", extract: twoembedExtract },
+  { id: "vidprime", name: "VidPrime", extract: vidprimeExtract },
+  { id: "vidspark", name: "VidSpark", extract: vidsparkExtract },
+  // MovieBox direct FebBox/MovieBox CDN streams (*.hakunaymatata.com)
+  { id: "moviebox", name: "MovieBox (CDN)", extract: movieboxExtract },
+  // Category specific sources
   { id: "anime", name: "Anime (Gogo)", extract: animeExtract },
   { id: "african", name: "African / Nollywood", extract: africanExtract },
 ];
-
 
 function withTimeout(promise, ms) {
   let timer;
@@ -329,7 +306,18 @@ export async function scrapeAll(type, tmdbId, season, episode, tasks = PROVIDERS
     ),
   );
 
-  const collect = () => slots.flatMap((s) => s.filter(Boolean));
+  const collect = () => {
+    const seen = new Set();
+    const out = [];
+    for (const s of slots.flatMap((s) => s.filter(Boolean))) {
+      if (!seen.has(s.url)) {
+        seen.add(s.url);
+        out.push(s);
+      }
+    }
+    return out;
+  };
+
   if (onSettled) Promise.all(pending).then(() => onSettled(collect()));
 
   await new Promise((resolve) => {

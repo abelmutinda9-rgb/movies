@@ -5,6 +5,9 @@ import { Readable } from "stream";
 import { tmdb } from "../tmdb.js";
 import { PROVIDERS, childUrl, scrapeAll, upstreamHeaders } from "../providers.js";
 import { listPstream, pstreamTasks } from "../pstream.js";
+import { movieboxSearch } from "../moviebox.js";
+import { streamwishExtractUrl } from "../streamwish.js";
+import { voeExtractUrl } from "../voe.js";
 
 const router = Router();
 
@@ -38,7 +41,7 @@ router.get("/trending/:type/:window", async (req, res) => {
 router.get("/movie/:id", async (req, res) => {
   res.json(
     await tmdb(`/movie/${req.params.id}`, {
-      append_to_response: "external_ids",
+      append_to_response: "credits,similar,videos",
     }),
   );
 });
@@ -46,7 +49,7 @@ router.get("/movie/:id", async (req, res) => {
 router.get("/tv/:id", async (req, res) => {
   res.json(
     await tmdb(`/tv/${req.params.id}`, {
-      append_to_response: "external_ids",
+      append_to_response: "credits,similar,videos",
     }),
   );
 });
@@ -55,31 +58,37 @@ router.get("/tv/:id/season/:season", async (req, res) => {
   res.json(await tmdb(`/tv/${req.params.id}/season/${req.params.season}`));
 });
 
-// short-lived cache: repeat plays are instant and we hit rate-limited sites less
-const CACHE_TTL = 20 * 60 * 1000;
-const CACHE_MAX = 200;
-const cache = new Map();
+// Cache for settled streams
+const streamCache = new Map();
+const CACHE_CAP = 200;
+
+function cacheKey(type, id, season, episode) {
+  return `${type}:${id}:${season ?? ""}:${episode ?? ""}`;
+}
 
 async function scrape(type, tmdbId, season, episode) {
-  const key = [type, tmdbId, season, episode].join(":");
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_TTL) return hit.streams;
+  const key = cacheKey(type, tmdbId, season, episode);
+  if (streamCache.has(key)) return streamCache.get(key);
 
-  const store = (streams) => {
-    if (!streams.length) return;
-    cache.delete(key);
-    cache.set(key, { at: Date.now(), streams });
-    if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
+  const custom = PROVIDERS.filter((p) => p.id !== "anime" && p.id !== "african");
+  const pkg = await pstreamTasks(type, tmdbId, season, episode);
+  const tasks = [...custom, ...pkg];
+
+  const onSettled = (full) => {
+    if (streamCache.size >= CACHE_CAP) {
+      const oldest = streamCache.keys().next().value;
+      streamCache.delete(oldest);
+    }
+    if (full.length) streamCache.set(key, full);
   };
-  const tasks = [...PROVIDERS, ...pstreamTasks(type)];
-  const streams = await scrapeAll(type, tmdbId, season, episode, tasks, store);
-  store(streams);
-  return streams;
+
+  return scrapeAll(type, tmdbId, season, episode, tasks, onSettled);
 }
 
 router.get("/stream/movie/:tmdbId", async (req, res) => {
   try {
-    res.json({ streams: await scrape("movie", req.params.tmdbId) });
+    const streams = await scrape("movie", req.params.tmdbId);
+    res.json({ streams });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -88,7 +97,8 @@ router.get("/stream/movie/:tmdbId", async (req, res) => {
 router.get("/stream/tv/:tmdbId/:season/:episode", async (req, res) => {
   const { tmdbId, season, episode } = req.params;
   try {
-    res.json({ streams: await scrape("tv", tmdbId, season, episode) });
+    const streams = await scrape("tv", tmdbId, Number(season), Number(episode));
+    res.json({ streams });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -114,12 +124,42 @@ router.get("/stream/african/:title", async (req, res) => {
   }
 });
 
+// MovieBox direct search
+router.get("/moviebox/search", async (req, res) => {
+  const { query } = req.query;
+  if (!query) return res.status(400).json({ error: "query required" });
+  try {
+    const results = await movieboxSearch(query);
+    res.json({ results });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Embed unpacker for StreamWish and VOE links
+router.get("/resolve/embed", async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: "url required" });
+  try {
+    let result = null;
+    if (/streamwish|flaswish|sfastwish|strwish/i.test(url)) {
+      result = await streamwishExtractUrl(url);
+    } else if (/voe\.(sx|net)/i.test(url)) {
+      result = await voeExtractUrl(url);
+    } else {
+      result = (await streamwishExtractUrl(url)) || (await voeExtractUrl(url));
+    }
+    if (!result) return res.status(404).json({ error: "Could not extract stream from embed" });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 const BLOCKED_HEADERS = new Set(["host", "content-length", "connection", "range"]);
 const PASS_HEADERS = ["content-type", "content-length", "content-range", "accept-ranges"];
 const MAX_CHUNK = 8 * 1024 * 1024;
 
-// A stream's `headers` are sent on every upstream request; a null value removes a
-// default header instead (some CDNs reject any Referer at all).
 function parseHeaders(raw) {
   if (!raw) return {};
   try {
@@ -134,18 +174,44 @@ function parseHeaders(raw) {
   }
 }
 
-// Proxy endpoint — solves CORS for HLS streams
+function isSafeUrl(targetUrl) {
+  try {
+    const u = new URL(targetUrl);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return false;
+    const host = u.hostname.toLowerCase();
+    if (
+      host === "localhost" ||
+      host.endsWith(".localhost") ||
+      host === "127.0.0.1" ||
+      host.startsWith("127.") ||
+      host === "0.0.0.0" ||
+      host === "169.254.169.254" ||
+      host.startsWith("10.") ||
+      host.startsWith("192.168.") ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Proxy endpoint — solves CORS for HLS streams and media
 router.get("/proxy", async (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).json({ error: "url required" });
+
+  if (!isSafeUrl(url)) {
+    return res.status(403).json({ error: "Access to private or invalid URL denied" });
+  }
 
   const ac = new AbortController();
   res.on("close", () => ac.abort());
 
   try {
     const headers = upstreamHeaders(url, parseHeaders(req.query.headers));
-    // Bun's fetch buffers bodies without backpressure, so an open-ended range on a
-    // multi-GB mp4 would pull the whole file into RAM — serve it in bounded chunks
     const range = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
     if (range) {
       const start = Number(range[1]);
@@ -161,7 +227,6 @@ router.get("/proxy", async (req, res) => {
     const ct = r.headers.get("content-type") || "";
     res.setHeader("Access-Control-Allow-Origin", "*");
 
-    // many hosts serve playlists without .m3u8 or an mpegurl type, so sniff the first bytes
     const reader = r.body?.getReader();
     const first = reader ? await reader.read() : { done: true };
     const head = first.value ? new TextDecoder().decode(first.value.subarray(0, 16)) : "";
@@ -203,6 +268,5 @@ router.get("/proxy", async (req, res) => {
     else res.destroy();
   }
 });
-
 
 export default router;
