@@ -153,24 +153,53 @@ export async function movieboxSearch(keyword) {
 
 export async function movieboxExtract(type, tmdbId, season = 1, episode = 1) {
   try {
-    // 1. Fetch direct MovieBox/FebBox CDN MP4 streams via the WASM token pipeline
-    const vidlinkStreams = await vidlinkExtract(type, tmdbId, season, episode);
-    const movieboxCdnStreams = vidlinkStreams.map((s) => ({
-      ...s,
-      provider: "moviebox",
-      providerName: "MovieBox (CDN)",
-    }));
+    const streams = [];
 
-    if (movieboxCdnStreams.length) {
-      return movieboxCdnStreams;
+    // 1. Fetch direct MovieBox/FebBox CDN streams via VidLink WASM token pipeline
+    try {
+      const vidlinkStreams = await vidlinkExtract(type, tmdbId, season, episode);
+      if (vidlinkStreams && vidlinkStreams.length) {
+        streams.push(...vidlinkStreams.map((s) => ({
+          ...s,
+          provider: "moviebox",
+          providerName: s.quality ? `MovieBox CDN (${s.quality})` : "MovieBox CDN",
+        })));
+      }
+    } catch (_) {}
+
+    // 2. Direct MovieBox API search for standalone high-speed AWS CloudFront MP4 streams
+    if (type === "movie" && tmdbId) {
+      try {
+        const { tmdb } = await import("./tmdb.js");
+        const meta = await tmdb(`/movie/${tmdbId}`);
+        const title = meta?.title || meta?.original_title;
+        if (title) {
+          const searchItems = await movieboxSearch(title);
+          const match = searchItems.find((i) => (i.title || "").toLowerCase() === title.toLowerCase()) || searchItems[0];
+          for (const detector of match?.resourceDetectors || []) {
+            for (const r of detector.resolutionList || []) {
+              if (r.resourceLink) {
+                streams.push({
+                  url: r.resourceLink,
+                  type: "file",
+                  quality: `${r.resolution}p`,
+                  provider: "moviebox",
+                  providerName: `MovieBox Direct (${r.resolution}p MP4)`,
+                  headers: {},
+                  size: r.size,
+                });
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.log("[moviebox] direct search extract error:", err.message);
+      }
     }
 
-    // 2. Direct MovieBox API fallback if user configured MOVIEBOX_TOKEN or for free items
-    const token = await getVisitorToken();
-    // Resolve TMDB to title via TMDB API if possible
-    return [];
+    return streams;
   } catch (e) {
-    console.log("[moviebox] extract error:", e.message);
+    console.log("[moviebox] error:", e.message);
     return [];
   }
 }

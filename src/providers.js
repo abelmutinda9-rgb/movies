@@ -11,6 +11,9 @@ import { vidprimeExtract } from "./vidprime.js";
 import { xpassExtract } from "./xpass.js";
 import { autoembedExtract } from "./autoembed.js";
 import { movieboxExtract } from "./moviebox.js";
+import { vidboltExtract } from "./vidbolt.js";
+import { braflixExtract } from "./braflix.js";
+import { purstreamExtract } from "./purstream.js";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -188,21 +191,20 @@ function firstNonEmpty(...extractors) {
 }
 
 const PROVIDERS = [
-  // Primary fast verified HLS extractors
-  { id: "vidsrc", name: "VidSrc", extract: firstNonEmpty(vidsrcExtract, autoembedExtract) },
-  { id: "cinesrc", name: "CineSrc", extract: cinesrcExtract },
+  // Fast direct MP4 & HLS extractors with high uptime
+  { id: "vidbolt", name: "VidBolt", extract: vidboltExtract },
+  { id: "moviebox", name: "MovieBox (CDN)", extract: movieboxExtract },
+  { id: "braflix", name: "BraFlix", extract: braflixExtract },
+  { id: "purstream", name: "PurStream", extract: purstreamExtract },
+  { id: "autoembed", name: "AutoEmbed", extract: autoembedExtract },
+  { id: "vidsrc", name: "VidSrc", extract: vidsrcExtract },
   { id: "xpass", name: "XPass", extract: xpassExtract },
-  { id: "vidnest", name: "VidNest", extract: vidnestExtract },
   { id: "vidrock", name: "VidRock", extract: vidrockExtract },
-  { id: "vidzee", name: "VidZee", extract: vidzeeExtract },
   { id: "twoembed", name: "2Embed", extract: twoembedExtract },
   { id: "vidprime", name: "VidPrime", extract: vidprimeExtract },
-  { id: "vidspark", name: "VidSpark", extract: vidsparkExtract },
-  // MovieBox direct FebBox/MovieBox CDN streams (*.hakunaymatata.com)
-  { id: "moviebox", name: "MovieBox (CDN)", extract: movieboxExtract },
-  // Category specific sources
-  { id: "anime", name: "Anime (Gogo)", extract: animeExtract },
-  { id: "african", name: "African / Nollywood", extract: africanExtract },
+  { id: "vidzee", name: "VidZee", extract: vidzeeExtract },
+  { id: "vidnest", name: "VidNest", extract: vidnestExtract },
+  { id: "cinesrc", name: "CineSrc", extract: cinesrcExtract },
 ];
 
 function withTimeout(promise, ms) {
