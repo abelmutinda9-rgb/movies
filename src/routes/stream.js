@@ -1,3 +1,5 @@
+import { searchMusic, getLyrics } from "../music.js";
+import { generateClientToken, verifyClientToken, expressSecurityMiddleware } from "../security.js";
 import { getAllLiveChannels, getLiveCategories, getDirectIptvStreams } from "../livetv.js";
 import { getSportsChannels, getLiveMatches } from "../sports.js";
 import { animeExtract } from "../anime.js";
@@ -21,6 +23,9 @@ router.get("/sources", (_req, res) => {
   res.json({
     custom: PROVIDERS.map(({ id, name }) => ({ id, name })),
     features: {
+      music: true,
+      syncedLyrics: true,
+      endpointSecurity: true,
       sports: true,
       liveChannels: true,
       subtitles: true,
@@ -122,6 +127,68 @@ const getChannelByIdHandler = async (req, res) => {
 };
 router.get("/livetv/channel/:id", getChannelByIdHandler);
 router.get("/tv/channel/:id", getChannelByIdHandler);
+
+
+// --- SECURITY / AUTH ENDPOINTS ---
+router.post("/auth/token", (req, res) => {
+  const { appId } = req.body || {};
+  const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress;
+  const token = generateClientToken(appId || "streaming-client", clientIp);
+  res.json({ token, expiresIn: 300 });
+});
+
+router.get("/auth/verify", (req, res) => {
+  const token = req.headers["x-app-token"] || req.query.token;
+  const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress;
+  const result = verifyClientToken(token, clientIp);
+  res.json(result);
+});
+
+// Apply optional security check
+router.use(expressSecurityMiddleware);
+
+// --- MUSIC & LYRICS ENDPOINTS ---
+router.get("/music/search", async (req, res) => {
+  const { q, page, limit } = req.query;
+  if (!q) return res.status(400).json({ error: "Search query required ('q')" });
+  try {
+    const data = await searchMusic(q, parseInt(page || "1", 10), parseInt(limit || "20", 10));
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/music/lyrics", async (req, res) => {
+  const { track, artist, duration, album } = req.query;
+  if (!track) return res.status(400).json({ error: "Track name required ('track')" });
+  try {
+    const dur = parseInt(duration || "0", 10);
+    const lyrics = await getLyrics(track, artist || "", dur, album || "");
+    res.json(lyrics);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// One-shot search + 320kbps stream + synced lyrics
+router.get("/music/play", async (req, res) => {
+  const { q } = req.query;
+  if (!q) return res.status(400).json({ error: "Query required ('q')" });
+  try {
+    const searchRes = await searchMusic(q, 1, 1);
+    const song = searchRes.results?.[0];
+    if (!song) return res.status(404).json({ error: "Song not found" });
+
+    const lyrics = await getLyrics(song.title, song.artist, song.duration, song.album);
+    res.json({
+      song,
+      lyrics,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 router.get("/tv/:id", async (req, res) => {
   try {

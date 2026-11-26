@@ -1,3 +1,5 @@
+import { searchMusic, getLyrics } from "./music.js";
+import { generateClientToken, verifyClientToken, honoSecurityMiddleware } from "./security.js";
 import { getAllLiveChannels, getLiveCategories, getDirectIptvStreams } from "./livetv.js";
 import { getSportsChannels, getLiveMatches } from "./sports.js";
 import { Hono } from "hono";
@@ -193,6 +195,74 @@ const wChannelByIdHandler = async (c) => {
 };
 app.get("/api/livetv/channel/:id", wChannelByIdHandler);
 app.get("/api/tv/channel/:id", wChannelByIdHandler);
+
+
+// --- SECURITY / AUTH ENDPOINTS ---
+app.post("/api/auth/token", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const clientIp = c.req.header("cf-connecting-ip") || c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
+  const secret = c.env?.APP_SECRET || (typeof process !== "undefined" && process.env?.APP_SECRET);
+  const token = generateClientToken(body.appId || "streaming-client", clientIp, secret);
+  return c.json({ token, expiresIn: 300 });
+});
+
+app.get("/api/auth/verify", (c) => {
+  const token = c.req.header("x-app-token") || c.req.query("token");
+  const clientIp = c.req.header("cf-connecting-ip") || c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
+  const secret = c.env?.APP_SECRET || (typeof process !== "undefined" && process.env?.APP_SECRET);
+  const result = verifyClientToken(token, clientIp, secret);
+  return c.json(result);
+});
+
+// Optional app token check for subsequent routes
+app.use("/api/*", honoSecurityMiddleware);
+
+// --- MUSIC & LYRICS ENDPOINTS ---
+app.get("/api/music/search", async (c) => {
+  const q = c.req.query("q");
+  const page = c.req.query("page") || "1";
+  const limit = c.req.query("limit") || "20";
+  if (!q) return c.json({ error: "Search query required ('q')" }, 400);
+
+  try {
+    const data = await searchMusic(q, parseInt(page, 10), parseInt(limit, 10));
+    return c.json(data);
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.get("/api/music/lyrics", async (c) => {
+  const track = c.req.query("track");
+  const artist = c.req.query("artist");
+  const duration = c.req.query("duration");
+  const album = c.req.query("album");
+  if (!track) return c.json({ error: "Track name required ('track')" }, 400);
+
+  try {
+    const dur = parseInt(duration || "0", 10);
+    const lyrics = await getLyrics(track, artist || "", dur, album || "");
+    return c.json(lyrics);
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.get("/api/music/play", async (c) => {
+  const q = c.req.query("q");
+  if (!q) return c.json({ error: "Query required ('q')" }, 400);
+
+  try {
+    const searchRes = await searchMusic(q, 1, 1);
+    const song = searchRes.results?.[0];
+    if (!song) return c.json({ error: "Song not found" }, 404);
+
+    const lyrics = await getLyrics(song.title, song.artist, song.duration, song.album);
+    return c.json({ song, lyrics });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
 
 app.get("/api/tv/:id", async (c) => {
   try {
