@@ -1,3 +1,4 @@
+import { getSportsChannels, getLiveMatches } from "../sports.js";
 import { animeExtract } from "../anime.js";
 import { africanExtract } from "../african.js";
 import { Router } from "express";
@@ -19,6 +20,8 @@ router.get("/sources", (_req, res) => {
   res.json({
     custom: PROVIDERS.map(({ id, name }) => ({ id, name })),
     features: {
+      sports: true,
+      liveChannels: true,
       subtitles: true,
       tmdbFallback: true,
       proxy: true,
@@ -195,6 +198,28 @@ router.get("/stream/african/:title", async (req, res) => {
 });
 
 // MovieBox direct search
+// Live Football & Sports Matches
+router.get("/sports/matches", async (req, res) => {
+  const sport = req.query.sport || "football";
+  try {
+    const matches = await getLiveMatches(sport);
+    res.json({ count: matches.length, sport, matches });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 24/7 Live Sports TV Channels (SuperSport, Sky Sports, TNT, etc.)
+router.get("/sports/channels", async (req, res) => {
+  const filter = req.query.filter || req.query.category || "all";
+  try {
+    const channels = await getSportsChannels(filter);
+    res.json({ count: channels.length, filter, channels });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get("/moviebox/search", async (req, res) => {
   const { query } = req.query;
   if (!query) return res.status(400).json({ error: "query required" });

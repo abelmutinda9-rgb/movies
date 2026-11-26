@@ -1,3 +1,4 @@
+import { getSportsChannels, getLiveMatches } from "./sports.js";
 import { Hono } from "hono";
 import { animeExtract } from "./anime.js";
 import { africanExtract } from "./african.js";
@@ -81,6 +82,8 @@ app.get("/api/sources", (c) => {
   return c.json({
     custom: PROVIDERS.map(({ id, name }) => ({ id, name })),
     features: {
+      sports: true,
+      liveChannels: true,
       subtitles: true,
       tmdbFallback: true,
       proxy: true,
@@ -247,6 +250,28 @@ app.get("/api/stream/african/:title", async (c) => {
 });
 
 // 10. MovieBox direct search
+// Live Football & Sports Matches
+app.get("/api/sports/matches", async (c) => {
+  const sport = c.req.query("sport") || "football";
+  try {
+    const matches = await getLiveMatches(sport);
+    return c.json({ count: matches.length, sport, matches });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// 24/7 Live Sports TV Channels (SuperSport, Sky Sports, TNT, etc.)
+app.get("/api/sports/channels", async (c) => {
+  const filter = c.req.query("filter") || c.req.query("category") || "all";
+  try {
+    const channels = await getSportsChannels(filter);
+    return c.json({ count: channels.length, filter, channels });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
 app.get("/api/moviebox/search", async (c) => {
   const q = c.req.query("q") || c.req.query("query");
   if (!q) return c.json({ error: "query required" }, 400);
