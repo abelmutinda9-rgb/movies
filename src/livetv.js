@@ -166,16 +166,44 @@ export async function getLiveCategories() {
  * Useful for native video players (ExoPlayer, AVPlayer, VLC, etc.)
  */
 export async function getDirectIptvStreams(options = {}) {
-  const { country, category, q, limit = 50 } = options;
+  const { country, q, limit = 50 } = options;
 
   if (!_cachedIptv || Date.now() > _iptvExpiry) {
     try {
-      const res = await fetch("https://iptv-org.github.io/api/streams.json", {
+      const res = await fetch("https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8", {
         headers: { "User-Agent": USER_AGENT },
         signal: AbortSignal.timeout(10000),
       });
       if (res.ok) {
-        _cachedIptv = await res.json();
+        const text = await res.text();
+        const entries = [];
+        const lines = text.split("\n");
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].startsWith("#EXTINF:")) {
+            const info = lines[i];
+            const url = lines[i + 1]?.trim();
+            if (url && url.startsWith("http") && (url.includes(".m3u8") || url.includes("/live"))) {
+              const nameMatch = info.match(/,(.+)$/);
+              const name = nameMatch ? nameMatch[1].replace(/[\u24B6-\u24E9]/g, "").trim() : "Unknown";
+              const groupMatch = info.match(/group-title="([^"]+)"/);
+              const group = groupMatch ? groupMatch[1].trim() : "General";
+              const logoMatch = info.match(/tvg-logo="([^"]+)"/);
+              const logo = logoMatch ? logoMatch[1].trim() : null;
+              const countryMatch = info.match(/tvg-country="([^"]+)"/);
+              const cCode = countryMatch ? countryMatch[1].trim() : "";
+
+              entries.push({
+                name,
+                country: group,
+                countryCode: cCode,
+                logo,
+                url,
+                streamType: "hls",
+              });
+            }
+          }
+        }
+        _cachedIptv = entries;
         _iptvExpiry = Date.now() + 2 * 60 * 60 * 1000; // Cache 2 hours
       }
     } catch (err) {
@@ -189,20 +217,14 @@ export async function getDirectIptvStreams(options = {}) {
   let list = _cachedIptv;
 
   if (country) {
-    const cUpper = country.toUpperCase();
-    list = list.filter((s) => s.channel && s.channel.endsWith(`_${cUpper}`));
+    const cLower = country.toLowerCase();
+    list = list.filter((c) => c.country.toLowerCase().includes(cLower) || c.countryCode.toLowerCase() === cLower);
   }
 
   if (q) {
     const qLower = q.toLowerCase();
-    list = list.filter((s) => s.title && s.title.toLowerCase().includes(qLower));
+    list = list.filter((c) => c.name.toLowerCase().includes(qLower) || c.country.toLowerCase().includes(qLower));
   }
 
-  return list.slice(0, Math.min(Number(limit) || 50, 200)).map((s) => ({
-    title: s.title,
-    channelId: s.channel,
-    url: s.url,
-    quality: s.quality || "auto",
-    streamType: "hls",
-  }));
+  return list.slice(0, Math.min(Number(limit) || 50, 200));
 }
