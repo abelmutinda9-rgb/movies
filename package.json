@@ -6,13 +6,16 @@
   "main": "src/index.js",
   "scripts": {
     "start": "bun src/index.js",
-    "dev": "bun --watch src/index.js"
+    "dev": "bun --watch src/index.js",
+    "worker:dev": "wrangler dev",
+    "worker:deploy": "wrangler deploy"
   },
   "dependencies": {
     "@p-stream/providers": "github:movie-web-rip/pstream-providers#production",
     "cors": "^2.8.5",
     "express": "^5.1.0",
-    "happy-dom": "^21.0.1"
+    "happy-dom": "^21.0.1",
+    "hono": "^4.13.22"
   },
   "patchedDependencies": {
     "@p-stream/providers@github:movie-web-rip/pstream-providers#8f8a949": "patches/@p-stream%2Fproviders@3.2.0.patch"
