@@ -1,3 +1,4 @@
+import { getAllLiveChannels, getLiveCategories, getDirectIptvStreams } from "../livetv.js";
 import { getSportsChannels, getLiveMatches } from "../sports.js";
 import { animeExtract } from "../anime.js";
 import { africanExtract } from "../african.js";
@@ -67,6 +68,60 @@ router.get("/movie/:id", async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+// --- LIVE TV ENDPOINTS ---
+// Categories
+const getCategoriesHandler = async (_req, res) => {
+  try {
+    const categories = await getLiveCategories();
+    res.json({ categories });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+router.get("/livetv/categories", getCategoriesHandler);
+router.get("/tv/categories", getCategoriesHandler);
+
+// Channels list (Movies, Kids, News, Entertainment, Sports, Docs, International)
+const getChannelsHandler = async (req, res) => {
+  const { category, subcategory, q } = req.query;
+  try {
+    const channels = await getAllLiveChannels({ category, subcategory, q });
+    res.json({ count: channels.length, category: category || "all", channels });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+router.get("/livetv/channels", getChannelsHandler);
+router.get("/tv/channels", getChannelsHandler);
+
+// Direct HLS (.m3u8) Public Streams
+const getIptvHandler = async (req, res) => {
+  const { country, q, limit } = req.query;
+  try {
+    const streams = await getDirectIptvStreams({ country, q, limit });
+    res.json({ count: streams.length, streams });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+router.get("/livetv/iptv", getIptvHandler);
+router.get("/tv/iptv", getIptvHandler);
+
+// Single Live TV Channel info
+const getChannelByIdHandler = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const channels = await getAllLiveChannels();
+    const ch = channels.find((c) => c.id === id);
+    if (!ch) return res.status(404).json({ error: "Channel not found" });
+    res.json({ channel: ch });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+router.get("/livetv/channel/:id", getChannelByIdHandler);
+router.get("/tv/channel/:id", getChannelByIdHandler);
 
 router.get("/tv/:id", async (req, res) => {
   try {

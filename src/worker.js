@@ -1,3 +1,4 @@
+import { getAllLiveChannels, getLiveCategories, getDirectIptvStreams } from "./livetv.js";
 import { getSportsChannels, getLiveMatches } from "./sports.js";
 import { Hono } from "hono";
 import { animeExtract } from "./anime.js";
@@ -135,6 +136,64 @@ app.get("/api/movie/:id", async (c) => {
 });
 
 // 5. Metadata: TV details
+// --- LIVE TV ENDPOINTS ---
+// Categories
+const wCategoriesHandler = async (c) => {
+  try {
+    const categories = await getLiveCategories();
+    return c.json({ categories });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+};
+app.get("/api/livetv/categories", wCategoriesHandler);
+app.get("/api/tv/categories", wCategoriesHandler);
+
+// Channels list (Movies, Kids, News, Entertainment, Sports, Docs, International)
+const wChannelsHandler = async (c) => {
+  const category = c.req.query("category");
+  const subcategory = c.req.query("subcategory");
+  const q = c.req.query("q");
+  try {
+    const channels = await getAllLiveChannels({ category, subcategory, q });
+    return c.json({ count: channels.length, category: category || "all", channels });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+};
+app.get("/api/livetv/channels", wChannelsHandler);
+app.get("/api/tv/channels", wChannelsHandler);
+
+// Direct HLS (.m3u8) Public Streams
+const wIptvHandler = async (c) => {
+  const country = c.req.query("country");
+  const q = c.req.query("q");
+  const limit = c.req.query("limit");
+  try {
+    const streams = await getDirectIptvStreams({ country, q, limit });
+    return c.json({ count: streams.length, streams });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+};
+app.get("/api/livetv/iptv", wIptvHandler);
+app.get("/api/tv/iptv", wIptvHandler);
+
+// Single Live TV Channel info
+const wChannelByIdHandler = async (c) => {
+  const id = c.req.param("id");
+  try {
+    const channels = await getAllLiveChannels();
+    const ch = channels.find((x) => x.id === id);
+    if (!ch) return c.json({ error: "Channel not found" }, 404);
+    return c.json({ channel: ch });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+};
+app.get("/api/livetv/channel/:id", wChannelByIdHandler);
+app.get("/api/tv/channel/:id", wChannelByIdHandler);
+
 app.get("/api/tv/:id", async (c) => {
   try {
     return c.json(
