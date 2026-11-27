@@ -176,9 +176,9 @@ async function vidsrcExtract(type, tmdbId, season, episode) {
 // a single slow provider must not hold up the response
 const PROVIDER_TIMEOUT = 15000;
 // once something is found, wait this much longer for the rest
-const GRACE_AFTER_FIRST = 6000;
-const HARD_DEADLINE = 18000;
-const CHECK_TIMEOUT = 6000;
+const GRACE_AFTER_FIRST = 1500; // Reduced from 6000ms for fast delivery
+const HARD_DEADLINE = 6000; // Hard cutoff at 6s instead of 18s
+const CHECK_TIMEOUT = 3000;
 // smaller than any real media segment; dead hosts often swap segments for 1x1 PNGs
 const MIN_SEGMENT_BYTES = 1024;
 
@@ -192,25 +192,27 @@ function firstNonEmpty(...extractors) {
   };
 }
 
+export const FAST_PROVIDERS = [
+  { id: "framex", name: "FrameX (Fast HLS)", extract: framexExtract },
+  { id: "vidrock", name: "VidRock (HLS)", extract: vidrockExtract },
+  { id: "vidbolt", name: "VidBolt (Fast HLS)", extract: vidboltExtract },
+  { id: "purstream", name: "PurStream (HLS)", extract: purstreamExtract },
+  { id: "vidzee", name: "VidZee (HLS)", extract: vidzeeExtract },
+  { id: "braflix", name: "BraFlix (Direct)", extract: braflixExtract },
+  { id: "vidsrc", name: "VidSrc (HLS)", extract: vidsrcExtract },
+  { id: "autoembed", name: "AutoEmbed (HLS)", extract: autoembedExtract },
+];
+
 const PROVIDERS = [
-  // Fast direct MP4 & HLS extractors with high uptime
-  { id: "vidbolt", name: "VidBolt", extract: vidboltExtract },
-  { id: "framex", name: "FrameX (HLS)", extract: framexExtract },
+  // Tier 1: Sub-300ms high-speed extractors
+  ...FAST_PROVIDERS,
+  // Tier 2: Deep catalog extractors (direct MP4 & multi-stream)
   { id: "moviebox", name: "MovieBox (CDN)", extract: movieboxExtract },
-  { id: "braflix", name: "BraFlix", extract: braflixExtract },
-  { id: "purstream", name: "PurStream", extract: purstreamExtract },
-  { id: "cinejoy", name: "Cinejoy (Wing)", extract: cinejoyExtract },
+  { id: "xpass", name: "XPass (HLS)", extract: xpassExtract },
   { id: "anime", name: "Anime (Sub/Dub HLS)", extract: animeExtract },
   { id: "african", name: "African / Nollywood", extract: africanExtract },
-  { id: "autoembed", name: "AutoEmbed", extract: autoembedExtract },
-  { id: "vidsrc", name: "VidSrc", extract: vidsrcExtract },
-  { id: "xpass", name: "XPass", extract: xpassExtract },
-  { id: "vidrock", name: "VidRock", extract: vidrockExtract },
-  { id: "twoembed", name: "2Embed", extract: twoembedExtract },
   { id: "vidprime", name: "VidPrime", extract: vidprimeExtract },
-  { id: "vidzee", name: "VidZee", extract: vidzeeExtract },
-  { id: "vidnest", name: "VidNest", extract: vidnestExtract },
-  { id: "cinesrc", name: "CineSrc", extract: cinesrcExtract },
+  { id: "twoembed", name: "2Embed", extract: twoembedExtract },
 ];
 
 function withTimeout(promise, ms) {

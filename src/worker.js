@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import { animeExtract } from "./anime.js";
 import { africanExtract } from "./african.js";
 import { tmdb } from "./tmdb.js";
-import { PROVIDERS, childUrl, scrapeAll, upstreamHeaders } from "./providers.js";
+import { PROVIDERS, FAST_PROVIDERS, childUrl, scrapeAll, upstreamHeaders } from "./providers.js";
 import { movieboxSearch } from "./moviebox.js";
 import { streamwishExtractUrl } from "./streamwish.js";
 import { voeExtractUrl } from "./voe.js";
@@ -353,6 +353,25 @@ app.get("/api/subtitles/vtt", async (c) => {
 });
 
 // 9. Core Streaming Routes
+
+app.get("/api/stream/fast/:tmdbId", async (c) => {
+  try {
+    const streams = await scrapeAll("movie", c.req.param("tmdbId"), null, null, FAST_PROVIDERS);
+    return c.json({ fast: true, count: streams.length, streams });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.get("/api/stream/fast/:tmdbId/:season/:episode", async (c) => {
+  try {
+    const streams = await scrapeAll("show", c.req.param("tmdbId"), c.req.param("season"), c.req.param("episode"), FAST_PROVIDERS);
+    return c.json({ fast: true, count: streams.length, streams });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
 app.get("/api/stream/movie/:tmdbId", async (c) => {
   try {
     const streams = await scrapeAll("movie", c.req.param("tmdbId"));

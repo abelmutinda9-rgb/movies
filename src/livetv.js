@@ -182,7 +182,8 @@ export async function getDirectIptvStreams(options = {}) {
           if (lines[i].startsWith("#EXTINF:")) {
             const info = lines[i];
             const url = lines[i + 1]?.trim();
-            if (url && url.startsWith("http") && (url.includes(".m3u8") || url.includes("/live"))) {
+            const isPlayable = url.includes(".m3u8") || url.includes(".mpd") || url.includes(".ts") || (url.includes("/live/") && !url.includes("youtube.com") && !url.includes("standardmedia.co.ke") && !url.includes("citizentv.co.ke"));
+            if (url && url.startsWith("http") && isPlayable) {
               const nameMatch = info.match(/,(.+)$/);
               const name = nameMatch ? nameMatch[1].replace(/[\u24B6-\u24E9]/g, "").trim() : "Unknown";
               const groupMatch = info.match(/group-title="([^"]+)"/);

@@ -10,7 +10,7 @@ import { africanExtract } from "../african.js";
 import { Router } from "express";
 import { Readable } from "stream";
 import { tmdb } from "../tmdb.js";
-import { PROVIDERS, childUrl, scrapeAll, upstreamHeaders } from "../providers.js";
+import { PROVIDERS, FAST_PROVIDERS, childUrl, scrapeAll, upstreamHeaders } from "../providers.js";
 import { listPstream, pstreamTasks } from "../pstream.js";
 import { movieboxSearch } from "../moviebox.js";
 import { streamwishExtractUrl } from "../streamwish.js";
@@ -266,24 +266,51 @@ function cacheKey(type, id, season, episode) {
   return `${type}:${id}:${season ?? ""}:${episode ?? ""}`;
 }
 
-async function scrape(type, tmdbId, season, episode) {
+async function scrape(type, tmdbId, season, episode, fastMode = false) {
   const key = cacheKey(type, tmdbId, season, episode);
-  if (streamCache.has(key)) return streamCache.get(key);
+  if (streamCache.has(key)) {
+    const cached = streamCache.get(key);
+    if (cached && cached.length) return cached;
+  }
 
-  const custom = PROVIDERS.filter((p) => p.id !== "anime" && p.id !== "african");
-  const pkg = await pstreamTasks(type, tmdbId, season, episode);
-  const tasks = [...custom, ...pkg];
+  const tasks = fastMode
+    ? FAST_PROVIDERS
+    : [...PROVIDERS.filter((p) => p.id !== "anime" && p.id !== "african"), ...(await pstreamTasks(type, tmdbId, season, episode))];
 
   const onSettled = (full) => {
     if (streamCache.size >= CACHE_CAP) {
       const oldest = streamCache.keys().next().value;
       streamCache.delete(oldest);
     }
-    if (full.length) streamCache.set(key, full);
+    if (full && full.length) streamCache.set(key, full);
   };
 
-  return scrapeAll(type, tmdbId, season, episode, tasks, onSettled);
+  const streams = await scrapeAll(type, tmdbId, season, episode, tasks, onSettled);
+  if (streams && streams.length) {
+    streamCache.set(key, streams);
+  }
+  return streams;
 }
+
+
+router.get("/stream/fast/:tmdbId", async (req, res) => {
+  try {
+    const streams = await scrape("movie", req.params.tmdbId, null, null, true);
+    res.json({ fast: true, streams });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/stream/fast/:tmdbId/:season/:episode", async (req, res) => {
+  const { tmdbId, season, episode } = req.params;
+  try {
+    const streams = await scrape("tv", tmdbId, Number(season), Number(episode), true);
+    res.json({ fast: true, streams });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 router.get("/stream/movie/:tmdbId", async (req, res) => {
   try {

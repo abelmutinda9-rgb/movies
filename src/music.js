@@ -118,6 +118,7 @@ async function searchMusicInternal(query, page = 1, limit = 20) {
     total: data.total || results.length,
     start: data.start || 1,
     results,
+    songs: results,
   };
 }
 
