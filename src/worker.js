@@ -1,3 +1,6 @@
+import { getTopRadioStations, getRadioStationsByCountry, searchRadioStations } from "./radio.js";
+import { getChannelEpg, attachEpgToChannels } from "./epg.js";
+import { getCinejoyServers } from "./cinejoy.js";
 import { searchMusic, getLyrics } from "./music.js";
 import { generateClientToken, verifyClientToken, honoSecurityMiddleware } from "./security.js";
 import { getAllLiveChannels, getLiveCategories, getDirectIptvStreams } from "./livetv.js";
@@ -45,6 +48,17 @@ app.use("*", async (c, next) => {
   await next();
 });
 
+// Root status endpoint (Headless API)
+app.get("/", (c) => {
+  return c.json({
+    status: "ok",
+    service: "movies-api",
+    version: "1.0.0",
+    runtime: "cloudflare-workers",
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Health check endpoint
 app.get("/health", (c) => {
   return c.json({
@@ -87,6 +101,8 @@ app.get("/api/sources", (c) => {
     features: {
       sports: true,
       liveChannels: true,
+      liveRadio: true,
+      epgGuide: true,
       subtitles: true,
       tmdbFallback: true,
       proxy: true,
@@ -576,4 +592,73 @@ app.get("/api/proxy", async (c) => {
   }
 });
 
+
+// --- LIVE RADIO ENDPOINTS ---
+app.get("/api/radio/stations", async (c) => {
+  try {
+    const limit = parseInt(c.req.query("limit") || "50", 10);
+    const stations = await getTopRadioStations(limit);
+    return c.json({ count: stations.length, stations });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.get("/api/radio/country/:code", async (c) => {
+  try {
+    const code = c.req.param("code");
+    const limit = parseInt(c.req.query("limit") || "50", 10);
+    const stations = await getRadioStationsByCountry(code, limit);
+    return c.json({ country: code.toUpperCase(), count: stations.length, stations });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.get("/api/radio/search", async (c) => {
+  const q = c.req.query("q");
+  if (!q) return c.json({ error: "Query required ('q')" }, 400);
+  try {
+    const limit = parseInt(c.req.query("limit") || "50", 10);
+    const stations = await searchRadioStations(q, limit);
+    return c.json({ query: q, count: stations.length, stations });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// --- EPG (TV GUIDE) ENDPOINTS ---
+app.get("/api/epg/channel/:id", async (c) => {
+  const id = c.req.param("id");
+  const name = c.req.query("name");
+  try {
+    const guide = await getChannelEpg(id, name || id);
+    return c.json(guide);
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.get("/api/epg/schedule", async (c) => {
+  try {
+    const channels = await getAllLiveChannels("all");
+    const sample = channels.slice(0, 30);
+    const enriched = await attachEpgToChannels(sample);
+    return c.json({ count: enriched.length, channels: enriched });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// --- CINEJOY SERVERS ENDPOINT ---
+app.get("/api/cinejoy/servers", async (c) => {
+  try {
+    const servers = await getCinejoyServers();
+    return c.json({ count: servers.length, servers });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
 export default app;
+

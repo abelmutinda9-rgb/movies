@@ -52,13 +52,22 @@ if (allowedOrigins.length > 0) {
   }));
 }
 
-// 2. Body Parser & Static Assets
+// 2. Body Parser (Headless JSON API)
 app.use(express.json());
-app.use(express.static(join(__dirname, "..", "public")));
 
-// 3. Health Check (Unauthenticated for deployment uptime probes)
+// 3. Root & Health Check Endpoints (Headless JSON API)
+app.get("/", (req, res) => {
+  res.json({
+    status: "ok",
+    service: "movies-api",
+    version: "1.0.0",
+    docs: "/api/sources",
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  res.json({ status: "ok", service: "movies-api", timestamp: new Date().toISOString() });
 });
 
 // 4. API Key Authentication Middleware

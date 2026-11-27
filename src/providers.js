@@ -15,6 +15,7 @@ import { movieboxExtract } from "./moviebox.js";
 import { vidboltExtract } from "./vidbolt.js";
 import { braflixExtract } from "./braflix.js";
 import { purstreamExtract } from "./purstream.js";
+import { cinejoyExtract } from "./cinejoy.js";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -198,6 +199,7 @@ const PROVIDERS = [
   { id: "moviebox", name: "MovieBox (CDN)", extract: movieboxExtract },
   { id: "braflix", name: "BraFlix", extract: braflixExtract },
   { id: "purstream", name: "PurStream", extract: purstreamExtract },
+  { id: "cinejoy", name: "Cinejoy (Wing)", extract: cinejoyExtract },
   { id: "anime", name: "Anime (Sub/Dub HLS)", extract: animeExtract },
   { id: "african", name: "African / Nollywood", extract: africanExtract },
   { id: "autoembed", name: "AutoEmbed", extract: autoembedExtract },

@@ -1,3 +1,6 @@
+import { getTopRadioStations, getRadioStationsByCountry, searchRadioStations } from "../radio.js";
+import { getChannelEpg, attachEpgToChannels } from "../epg.js";
+import { getCinejoyServers } from "../cinejoy.js";
 import { searchMusic, getLyrics } from "../music.js";
 import { generateClientToken, verifyClientToken, expressSecurityMiddleware } from "../security.js";
 import { getAllLiveChannels, getLiveCategories, getDirectIptvStreams } from "../livetv.js";
@@ -28,6 +31,8 @@ router.get("/sources", (_req, res) => {
       endpointSecurity: true,
       sports: true,
       liveChannels: true,
+      liveRadio: true,
+      epgGuide: true,
       subtitles: true,
       tmdbFallback: true,
       proxy: true,
@@ -552,4 +557,71 @@ router.get("/proxy", async (req, res) => {
   }
 });
 
+
+// --- LIVE RADIO ENDPOINTS ---
+router.get("/radio/stations", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit || "50", 10);
+    const stations = await getTopRadioStations(limit);
+    res.json({ count: stations.length, stations });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/radio/country/:code", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit || "50", 10);
+    const stations = await getRadioStationsByCountry(req.params.code, limit);
+    res.json({ country: req.params.code.toUpperCase(), count: stations.length, stations });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/radio/search", async (req, res) => {
+  const { q, limit } = req.query;
+  if (!q) return res.status(400).json({ error: "Query required ('q')" });
+  try {
+    const stations = await searchRadioStations(q, parseInt(limit || "50", 10));
+    res.json({ query: q, count: stations.length, stations });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- EPG (TV GUIDE) ENDPOINTS ---
+router.get("/epg/channel/:id", async (req, res) => {
+  const { id } = req.params;
+  const { name } = req.query;
+  try {
+    const guide = await getChannelEpg(id, name || id);
+    res.json(guide);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/epg/schedule", async (req, res) => {
+  try {
+    const channels = await getAllLiveChannels("all");
+    const sample = channels.slice(0, 30);
+    const enriched = await attachEpgToChannels(sample);
+    res.json({ count: enriched.length, channels: enriched });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- CINEJOY SERVERS ENDPOINT ---
+router.get("/cinejoy/servers", async (_req, res) => {
+  try {
+    const servers = await getCinejoyServers();
+    res.json({ count: servers.length, servers });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;
+
