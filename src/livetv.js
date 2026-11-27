@@ -229,3 +229,294 @@ export async function getDirectIptvStreams(options = {}) {
 
   return list.slice(0, Math.min(Number(limit) || 50, 200));
 }
+
+
+// ==========================================
+// DSTV & STARTIMES DECODER MAPPING MODULES
+// ==========================================
+
+export const DSTV_CHANNEL_MAP = [
+  // Entertainment & Movies (100 - 199)
+  { number: 101, name: "M-Net", defaultId: "827", category: "Entertainment", match: ["m-net", "dstv m-net"] },
+  { number: 111, name: "TNT Africa", defaultId: "109", category: "Movies", match: ["tnt"] },
+  { number: 124, name: "E! Entertainment", defaultId: "78", category: "Entertainment", match: ["e!"] },
+  { number: 161, name: "Mzansi Magic", defaultId: "786", category: "Entertainment", match: ["mzansi magic", "dstv mzansi magic"] },
+  { number: 175, name: "Food Network", defaultId: "102", category: "Lifestyle", match: ["food network"] },
+  { number: 176, name: "HGTV", defaultId: "103", category: "Lifestyle", match: ["hgtv"] },
+  { number: 181, name: "National Geographic", defaultId: "100", category: "Documentary", match: ["national geographic", "nat geo"] },
+  { number: 182, name: "Nat Geo Wild", defaultId: "101", category: "Documentary", match: ["nat geo wild"] },
+  { number: 186, name: "History Channel", defaultId: "98", category: "Documentary", match: ["history"] },
+
+  // SuperSport Lineup (200 - 249)
+  { number: 201, name: "SuperSport Grandstand", defaultId: "412", category: "SuperSport", match: ["supersport grandstand"] },
+  { number: 202, name: "SuperSport PSL", defaultId: "413", category: "SuperSport", match: ["supersport psl"] },
+  { number: 203, name: "SuperSport Premier League", defaultId: "414", category: "SuperSport", match: ["supersport premier league"] },
+  { number: 204, name: "SuperSport LaLiga", defaultId: "415", category: "SuperSport", match: ["supersport laliga"] },
+  { number: 205, name: "SuperSport Football", defaultId: "56", category: "SuperSport", match: ["supersport football"] },
+  { number: 206, name: "SuperSport Variety 1", defaultId: "416", category: "SuperSport", match: ["supersport variety 1"] },
+  { number: 207, name: "SuperSport Variety 2", defaultId: "417", category: "SuperSport", match: ["supersport variety 2"] },
+  { number: 208, name: "SuperSport Variety 3", defaultId: "418", category: "SuperSport", match: ["supersport variety 3"] },
+  { number: 209, name: "SuperSport Variety 4", defaultId: "419", category: "SuperSport", match: ["supersport variety 4"] },
+  { number: 210, name: "SuperSport Action", defaultId: "420", category: "SuperSport", match: ["supersport action"] },
+  { number: 211, name: "SuperSport Rugby", defaultId: "421", category: "SuperSport", match: ["supersport rugby"] },
+  { number: 212, name: "SuperSport Cricket", defaultId: "368", category: "SuperSport", match: ["supersport cricket"] },
+  { number: 213, name: "SuperSport Golf", defaultId: "422", category: "SuperSport", match: ["supersport golf"] },
+  { number: 214, name: "SuperSport Tennis", defaultId: "423", category: "SuperSport", match: ["supersport tennis"] },
+  { number: 215, name: "SuperSport Motorsport", defaultId: "424", category: "SuperSport", match: ["supersport motorsport"] },
+  { number: 241, name: "ESPN", defaultId: "26", category: "SuperSport", match: ["espn"] },
+  { number: 242, name: "ESPN 2", defaultId: "27", category: "SuperSport", match: ["espn 2", "espn2"] },
+
+  // Kids & Animation (300 - 399)
+  { number: 301, name: "Cartoon Network", defaultId: "90", category: "Kids", match: ["cartoon network"] },
+  { number: 302, name: "Boomerang / Cartoonito", defaultId: "91", category: "Kids", match: ["boomerang", "cartoonito"] },
+  { number: 303, name: "Disney Channel", defaultId: "93", category: "Kids", match: ["disney channel"] },
+  { number: 304, name: "Disney Junior", defaultId: "94", category: "Kids", match: ["disney junior"] },
+  { number: 305, name: "Nickelodeon", defaultId: "88", category: "Kids", match: ["nickelodeon"] },
+  { number: 308, name: "Nick Jr.", defaultId: "89", category: "Kids", match: ["nick jr"] },
+
+  // News & Business (400 - 449)
+  { number: 401, name: "CNN International", defaultId: "85", category: "News", match: ["cnn"] },
+  { number: 402, name: "BBC News", defaultId: "81", category: "News", match: ["bbc news"] },
+  { number: 404, name: "Sky News", defaultId: "83", category: "News", match: ["sky news"] },
+  { number: 406, name: "Al Jazeera English", defaultId: "86", category: "News", match: ["al jazeera"] },
+  { number: 410, name: "CNBC", defaultId: "87", category: "News", match: ["cnbc"] },
+  { number: 411, name: "Bloomberg TV", defaultId: "97", category: "News", match: ["bloomberg"] },
+  { number: 412, name: "Euronews", defaultId: "106", category: "News", match: ["euronews"] },
+
+  // International UK/US Sports Feeds (800 - 899)
+  { number: 801, name: "Sky Sports Main Event", defaultId: "38", category: "International Sports", match: ["sky sports main event"] },
+  { number: 802, name: "Sky Sports Premier League", defaultId: "130", category: "International Sports", match: ["sky sports premier league"] },
+  { number: 803, name: "Sky Sports Football", defaultId: "129", category: "International Sports", match: ["sky sports football"] },
+  { number: 804, name: "Sky Sports F1", defaultId: "131", category: "International Sports", match: ["sky sports f1"] },
+  { number: 805, name: "TNT Sports 1", defaultId: "57", category: "International Sports", match: ["tnt sports 1"] },
+  { number: 806, name: "TNT Sports 2", defaultId: "58", category: "International Sports", match: ["tnt sports 2"] },
+  { number: 807, name: "TNT Sports 3", defaultId: "59", category: "International Sports", match: ["tnt sports 3"] },
+  { number: 808, name: "TNT Sports 4", defaultId: "60", category: "International Sports", match: ["tnt sports 4"] },
+  { number: 809, name: "USA Network", defaultId: "343", category: "International Sports", match: ["usa network"] },
+  { number: 810, name: "beIN Sports 1", defaultId: "18", category: "International Sports", match: ["bein sports 1"] }
+];
+
+export const STARTIMES_CHANNEL_MAP = [
+  // Local African FTA on StarTimes
+  { number: 1, name: "KBC Channel 1", category: "StarTimes Local", country: "Kenya", streamType: "hls", url: "https://kbc.co.ke/live/index.m3u8" },
+  { number: 2, name: "Citizen TV", category: "StarTimes Local", country: "Kenya", streamType: "hls", url: "https://citizentv.co.ke/live/index.m3u8" },
+  { number: 3, name: "KTN Home", category: "StarTimes Local", country: "Kenya", streamType: "hls", url: "https://standardmedia.co.ke/ktn/live/index.m3u8" },
+  { number: 4, name: "NTV Kenya", category: "StarTimes Local", country: "Kenya", streamType: "hls", url: "https://ntvkenya.co.ke/live/index.m3u8" },
+  { number: 5, name: "K24 TV", category: "StarTimes Local", country: "Kenya", streamType: "hls", url: "https://k24tv.co.ke/live/index.m3u8" },
+  { number: 10, name: "e.tv News & Sport", category: "StarTimes Local", country: "South Africa", streamType: "hls", url: "https://etv.co.za/live/index.m3u8" },
+  { number: 11, name: "SABC News", category: "StarTimes Local", country: "South Africa", streamType: "hls", url: "https://sabc.co.za/news/live/index.m3u8" },
+  { number: 12, name: "Channels TV", category: "StarTimes Local", country: "Nigeria", streamType: "hls", url: "https://channelstv.com/live/index.m3u8" },
+  { number: 13, name: "TVC News", category: "StarTimes Local", country: "Nigeria", streamType: "hls", url: "https://tvcnews.tv/live/index.m3u8" },
+
+  // StarTimes Sports & World Sports
+  { number: 240, name: "ST Sports Premium", category: "StarTimes Sports", defaultId: "412", match: ["st sports", "sports premium"] },
+  { number: 241, name: "ST World Football", category: "StarTimes Sports", defaultId: "414", match: ["world football", "football"] },
+  { number: 242, name: "ST Sports Arena", category: "StarTimes Sports", defaultId: "415", match: ["sports arena"] },
+  { number: 243, name: "ST Sports Life", category: "StarTimes Sports", defaultId: "416", match: ["sports life"] },
+  { number: 244, name: "ST Sports Focus", category: "StarTimes Sports", defaultId: "56", match: ["sports focus"] },
+  { number: 250, name: "ESPN", category: "StarTimes Sports", defaultId: "26", match: ["espn"] },
+  { number: 251, name: "ESPN 2", category: "StarTimes Sports", defaultId: "27", match: ["espn 2"] },
+
+  // Novelas, Movies & Kungfu
+  { number: 105, name: "ST Novela E", category: "StarTimes Novelas", defaultId: "786", match: ["novela e"] },
+  { number: 106, name: "ST Novela E Plus", category: "StarTimes Novelas", defaultId: "827", match: ["novela e plus"] },
+  { number: 102, name: "ST Nollywood Plus", category: "StarTimes Movies", defaultId: null, match: ["nollywood"] },
+  { number: 115, name: "ST Sino Drama", category: "StarTimes Series", defaultId: null, match: ["sino drama"] },
+  { number: 118, name: "ST Kungfu", category: "StarTimes Movies", defaultId: null, match: ["kungfu"] },
+  { number: 160, name: "ST Swahili", category: "StarTimes Local", defaultId: null, match: ["swahili"] },
+
+  // Kids
+  { number: 300, name: "ST Kids", category: "StarTimes Kids", defaultId: "88", match: ["st kids", "nickelodeon"] },
+  { number: 305, name: "Baby TV", category: "StarTimes Kids", defaultId: "94", match: ["baby tv", "disney junior"] }
+];
+
+let _countryCache = new Map();
+
+/**
+ * Fetch DStv Channel Lineup with Logical Channel Numbers
+ */
+export async function getDstvChannels(options = {}) {
+  const { category, q } = options;
+  const allLive = await getAllLiveChannels();
+  const liveMap = new Map();
+  for (const ch of allLive) {
+    liveMap.set(String(ch.id), ch);
+  }
+
+  const result = [];
+
+  for (const item of DSTV_CHANNEL_MAP) {
+    let matched = item.defaultId ? liveMap.get(String(item.defaultId)) : null;
+
+    if (!matched && item.match && item.match.length > 0) {
+      for (const m of item.match) {
+        matched = allLive.find(c => c.name.toLowerCase().includes(m.toLowerCase()));
+        if (matched) break;
+      }
+    }
+
+    const channelId = matched ? matched.id : (item.defaultId || `dstv-${item.number}`);
+    const embedUrl = matched ? matched.embedUrl : `${DADDY_BASE}/stream/stream-${channelId}.php`;
+    const watchUrl = matched ? matched.watchUrl : `${DADDY_BASE}/watch.php?id=${channelId}`;
+
+    result.push({
+      number: item.number,
+      name: item.name,
+      category: item.category,
+      provider: "DStv",
+      id: channelId,
+      streamType: "embed",
+      embedUrl,
+      watchUrl,
+      isLive: Boolean(matched)
+    });
+  }
+
+  let list = result.sort((a, b) => a.number - b.number);
+
+  if (category && category !== "all") {
+    const cLower = category.toLowerCase();
+    list = list.filter(c => c.category.toLowerCase().includes(cLower));
+  }
+
+  if (q) {
+    const qLower = q.toLowerCase();
+    list = list.filter(c => c.name.toLowerCase().includes(qLower) || String(c.number).includes(qLower) || c.category.toLowerCase().includes(qLower));
+  }
+
+  return list;
+}
+
+/**
+ * Fetch StarTimes Decoder Channel Lineup
+ */
+export async function getStarTimesChannels(options = {}) {
+  const { category, q } = options;
+  const allLive = await getAllLiveChannels();
+  const liveMap = new Map();
+  for (const ch of allLive) {
+    liveMap.set(String(ch.id), ch);
+  }
+
+  const result = [];
+
+  for (const item of STARTIMES_CHANNEL_MAP) {
+    if (item.url) {
+      result.push({
+        number: item.number,
+        name: item.name,
+        category: item.category,
+        provider: "StarTimes",
+        country: item.country || "Africa",
+        streamType: item.streamType || "hls",
+        url: item.url,
+        isLive: true
+      });
+      continue;
+    }
+
+    let matched = item.defaultId ? liveMap.get(String(item.defaultId)) : null;
+    if (!matched && item.match) {
+      for (const m of item.match) {
+        matched = allLive.find(c => c.name.toLowerCase().includes(m.toLowerCase()));
+        if (matched) break;
+      }
+    }
+
+    const channelId = matched ? matched.id : (item.defaultId || `st-${item.number}`);
+    result.push({
+      number: item.number,
+      name: item.name,
+      category: item.category,
+      provider: "StarTimes",
+      id: channelId,
+      streamType: "embed",
+      embedUrl: `${DADDY_BASE}/stream/stream-${channelId}.php`,
+      watchUrl: `${DADDY_BASE}/watch.php?id=${channelId}`,
+      isLive: Boolean(matched)
+    });
+  }
+
+  let list = result.sort((a, b) => a.number - b.number);
+
+  if (category && category !== "all") {
+    const cLower = category.toLowerCase();
+    list = list.filter(c => c.category.toLowerCase().includes(cLower));
+  }
+
+  if (q) {
+    const qLower = q.toLowerCase();
+    list = list.filter(c => c.name.toLowerCase().includes(qLower) || String(c.number).includes(qLower));
+  }
+
+  return list;
+}
+
+/**
+ * Fetch local Country TV channels from iptv-org playlists (e.g. ZA for e.tv/SABC, KE for Citizen/K24, NG, etc.)
+ */
+export async function getCountryChannels(countryCode, options = {}) {
+  const code = (countryCode || "za").toLowerCase().trim();
+  const { q, category } = options;
+  const now = Date.now();
+
+  const cached = _countryCache.get(code);
+  if (cached && now < cached.expiry) {
+    return filterCountryChannels(cached.channels, { q, category });
+  }
+
+  try {
+    const res = await fetch(`https://iptv-org.github.io/iptv/countries/${code}.m3u`, {
+      headers: { "User-Agent": USER_AGENT },
+      signal: AbortSignal.timeout(8000)
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const lines = text.split("\n");
+    const channels = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith("#EXTINF:")) {
+        const info = lines[i];
+        const url = lines[i + 1]?.trim();
+        if (url && url.startsWith("http")) {
+          const nameMatch = info.match(/,(.+)$/);
+          const rawName = nameMatch ? nameMatch[1].trim() : "Channel";
+          const logoMatch = info.match(/tvg-logo=\"([^\"]+)\"/);
+          const groupMatch = info.match(/group-title=\"([^\"]+)\"/);
+
+          channels.push({
+            name: rawName.replace(/\s*\[[^\]]+\]/g, "").replace(/\s*\([^)]+\)/g, "").trim(),
+            fullName: rawName,
+            countryCode: code.toUpperCase(),
+            category: groupMatch ? groupMatch[1].trim() : "Local TV",
+            logo: logoMatch ? logoMatch[1].trim() : null,
+            streamType: url.includes(".m3u8") ? "hls" : (url.includes(".mpd") ? "dash" : "stream"),
+            url
+          });
+        }
+      }
+    }
+
+    _countryCache.set(code, { channels, expiry: now + 60 * 60 * 1000 });
+    return filterCountryChannels(channels, { q, category });
+  } catch (err) {
+    console.error(`[livetv] getCountryChannels error for ${code}:`, err.message);
+    if (cached) return filterCountryChannels(cached.channels, { q, category });
+    return [];
+  }
+}
+
+function filterCountryChannels(list, { q, category } = {}) {
+  let result = list;
+  if (category && category !== "all") {
+    const cLower = category.toLowerCase();
+    result = result.filter(c => c.category.toLowerCase().includes(cLower));
+  }
+  if (q) {
+    const qLower = q.toLowerCase();
+    result = result.filter(c => c.name.toLowerCase().includes(qLower) || c.fullName.toLowerCase().includes(qLower));
+  }
+  return result;
+}
