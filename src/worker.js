@@ -3,7 +3,7 @@ import { getChannelEpg, attachEpgToChannels } from "./epg.js";
 import { getCinejoyServers } from "./cinejoy.js";
 import { searchMusic, getLyrics } from "./music.js";
 import { generateClientToken, verifyClientToken, honoSecurityMiddleware, getClientCodeSnippet } from "./security.js";
-import { getAllLiveChannels, getLiveCategories, getDirectIptvStreams } from "./livetv.js";
+import { getAllLiveChannels, getLiveCategories, getDirectIptvStreams, getDstvChannels, getStarTimesChannels, getCountryChannels } from "./livetv.js";
 import { getSportsChannels, getLiveMatches } from "./sports.js";
 import { Hono } from "hono";
 import { animeExtract } from "./anime.js";
@@ -211,6 +211,50 @@ const wChannelByIdHandler = async (c) => {
 };
 app.get("/api/livetv/channel/:id", wChannelByIdHandler);
 app.get("/api/tv/channel/:id", wChannelByIdHandler);
+
+// DStv Channel Lineup (Logical Channel Numbers)
+const wDstvHandler = async (c) => {
+  const category = c.req.query("category");
+  const q = c.req.query("q");
+  try {
+    const channels = await getDstvChannels({ category, q });
+    return c.json({ provider: "DStv", count: channels.length, channels });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+};
+app.get("/api/livetv/dstv", wDstvHandler);
+app.get("/api/tv/dstv", wDstvHandler);
+
+// StarTimes Decoder Channels
+const wStarTimesHandler = async (c) => {
+  const category = c.req.query("category");
+  const q = c.req.query("q");
+  try {
+    const channels = await getStarTimesChannels({ category, q });
+    return c.json({ provider: "StarTimes", count: channels.length, channels });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+};
+app.get("/api/livetv/startimes", wStarTimesHandler);
+app.get("/api/tv/startimes", wStarTimesHandler);
+
+// Local Country TV Channels (e.g. ZA for e.tv, KE for Citizen/K24, NG, GH, etc.)
+const wCountryChannelsHandler = async (c) => {
+  const code = c.req.param("code");
+  const q = c.req.query("q");
+  const category = c.req.query("category");
+  try {
+    const channels = await getCountryChannels(code, { q, category });
+    return c.json({ country: code.toUpperCase(), count: channels.length, channels });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+};
+app.get("/api/livetv/country/:code", wCountryChannelsHandler);
+app.get("/api/tv/country/:code", wCountryChannelsHandler);
+
 
 
 // --- SECURITY / AUTH ENDPOINTS ---
