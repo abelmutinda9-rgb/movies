@@ -174,11 +174,11 @@ async function vidsrcExtract(type, tmdbId, season, episode) {
 }
 
 // a single slow provider must not hold up the response
-const PROVIDER_TIMEOUT = 15000;
-// once something is found, wait this much longer for the rest
-const GRACE_AFTER_FIRST = 1500; // Reduced from 6000ms for fast delivery
-const HARD_DEADLINE = 6000; // Hard cutoff at 6s instead of 18s
-const CHECK_TIMEOUT = 3000;
+const PROVIDER_TIMEOUT = 4500;
+// once something is found, wait this much longer for the rest (reduced for instant response)
+const GRACE_AFTER_FIRST = 200;
+const HARD_DEADLINE = 4000; // Hard cutoff at 4s
+const CHECK_TIMEOUT = 1800;
 // smaller than any real media segment; dead hosts often swap segments for 1x1 PNGs
 const MIN_SEGMENT_BYTES = 1024;
 
@@ -193,10 +193,11 @@ function firstNonEmpty(...extractors) {
 }
 
 export const FAST_PROVIDERS = [
-  { id: "framex", name: "FrameX (Fast HLS)", extract: framexExtract },
-  { id: "vidrock", name: "VidRock (HLS)", extract: vidrockExtract },
   { id: "vidbolt", name: "VidBolt (Fast HLS)", extract: vidboltExtract },
+  { id: "framex", name: "FrameX (Fast HLS)", extract: framexExtract },
+  { id: "moviebox", name: "MovieBox (CDN Direct)", extract: movieboxExtract },
   { id: "purstream", name: "PurStream (HLS)", extract: purstreamExtract },
+  { id: "vidrock", name: "VidRock (HLS)", extract: vidrockExtract },
   { id: "vidzee", name: "VidZee (HLS)", extract: vidzeeExtract },
   { id: "braflix", name: "BraFlix (Direct)", extract: braflixExtract },
   { id: "vidsrc", name: "VidSrc (HLS)", extract: vidsrcExtract },
@@ -204,10 +205,9 @@ export const FAST_PROVIDERS = [
 ];
 
 const PROVIDERS = [
-  // Tier 1: Sub-300ms high-speed extractors
+  // Tier 1: High-speed parallel extractors (including MovieBox)
   ...FAST_PROVIDERS,
   // Tier 2: Deep catalog extractors (direct MP4 & multi-stream)
-  { id: "moviebox", name: "MovieBox (CDN)", extract: movieboxExtract },
   { id: "xpass", name: "XPass (HLS)", extract: xpassExtract },
   { id: "anime", name: "Anime (Sub/Dub HLS)", extract: animeExtract },
   { id: "african", name: "African / Nollywood", extract: africanExtract },
@@ -280,7 +280,7 @@ async function isAlive(stream) {
       return r.ok && !(r.headers.get("content-type") || "").includes("text/html");
     }
     let url = stream.url;
-    for (let depth = 0; depth < 3; depth++) {
+    for (let depth = 0; depth < 2; depth++) {
       const r = await get(url);
       const text = r.ok ? await r.text() : "";
       if (!text.trimStart().startsWith("#EXTM3U")) return false;
@@ -290,13 +290,79 @@ async function isAlive(stream) {
         .find((l) => l && !l.startsWith("#"));
       if (!ref) return false;
       const next = childUrl(ref, r.url || url, new URL(url).searchParams.get("token"));
-      if (!text.includes("#EXT-X-STREAM-INF")) return await looksLikeMedia(await get(next));
+      if (!text.includes("#EXT-X-STREAM-INF")) return true;
       url = next;
     }
-    return false;
+    return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * Race all providers simultaneously. Resolves with the very first verified live stream(s)
+ * as soon as any provider succeeds, without waiting for the rest or any grace window.
+ */
+export async function scrapeFastest(type, tmdbId, season, episode, tasks = FAST_PROVIDERS, onSettled) {
+  const seen = new Set();
+  const allLive = [];
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    let pending = tasks.length;
+
+    const finish = () => {
+      if (!resolved) {
+        resolved = true;
+        resolve(allLive);
+      }
+    };
+
+    const hardTimer = setTimeout(finish, 3500);
+
+    for (const p of tasks) {
+      withTimeout(
+        Promise.resolve().then(() => p.extract(type, tmdbId, season, episode)),
+        p.timeout ?? 2500
+      )
+        .then((streams) => {
+          if (!streams || !streams.length) {
+            if (--pending <= 0) finish();
+            return;
+          }
+
+          // Probe streams as they arrive
+          for (const s of streams) {
+            isAlive(s).then((alive) => {
+              if (alive) {
+                if (!seen.has(s.url)) {
+                  seen.add(s.url);
+                  allLive.push(s);
+                }
+                if (!resolved) {
+                  resolved = true;
+                  clearTimeout(hardTimer);
+                  resolve([s]); // Instant delivery of fastest stream!
+                }
+              }
+            }).catch(() => {});
+          }
+
+          if (--pending <= 0) {
+            setTimeout(finish, 150);
+          }
+        })
+        .catch(() => {
+          if (--pending <= 0) finish();
+        });
+    }
+
+    if (onSettled) {
+      setTimeout(() => {
+        onSettled(allLive);
+      }, 3500);
+    }
+  });
 }
 
 // tasks: [{ id, extract }] — runs all in parallel, returns live streams in task order.

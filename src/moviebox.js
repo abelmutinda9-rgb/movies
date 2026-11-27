@@ -134,6 +134,60 @@ async function getVisitorToken() {
   return token;
 }
 
+/**
+ * Format raw MovieBox subject item into a clean, compact metadata card
+ */
+export function formatMovieboxItem(item) {
+  if (!item) return null;
+  const resolutions = [];
+  const directStreams = [];
+
+  for (const detector of item.resourceDetectors || []) {
+    for (const r of detector.resolutionList || []) {
+      if (r.resolution && !resolutions.includes(`${r.resolution}p`)) {
+        resolutions.push(`${r.resolution}p`);
+      }
+      if (r.resourceLink) {
+        directStreams.push({
+          resolution: `${r.resolution || 720}p`,
+          url: r.resourceLink,
+          size: r.size,
+          codec: r.codecName,
+        });
+      }
+    }
+    if (detector.downloadUrl && !directStreams.some((d) => d.url === detector.downloadUrl)) {
+      directStreams.push({
+        resolution: "source",
+        url: detector.downloadUrl,
+        size: detector.totalSize,
+        codec: detector.codecName,
+      });
+    }
+  }
+
+  return {
+    id: item.subjectId,
+    type: item.subjectType === 2 ? "tv" : "movie",
+    title: item.title,
+    releaseDate: item.releaseDate,
+    year: item.releaseDate ? item.releaseDate.split("-")[0] : "",
+    duration: item.duration || "",
+    durationSeconds: item.durationSeconds || 0,
+    genres: item.genre ? item.genre.split(",").map((g) => g.trim()) : [],
+    imdbRating: item.imdbRatingValue || null,
+    cover: item.cover?.url || "",
+    stills: item.stills?.url || "",
+    contentRating: item.contentRating || "",
+    hasResource: item.hasResource || directStreams.length > 0,
+    resolutions,
+    directStreams,
+  };
+}
+
+/**
+ * Search MovieBox catalog
+ */
 export async function movieboxSearch(keyword) {
   try {
     const token = await getVisitorToken();
@@ -141,44 +195,101 @@ export async function movieboxSearch(keyword) {
       "POST",
       "/wefeed-mobile-bff/subject-api/search",
       {},
-      { keyword, type: 0, page: 1, pageSize: 15 },
+      { keyword, type: 0, page: 1, pageSize: 20 },
       token,
     );
-    return res?.data?.items || res?.data?.list || [];
+    const rawItems = res?.data?.items || res?.data?.list || [];
+    return rawItems;
   } catch (e) {
     console.log("[moviebox] search error:", e.message);
     return [];
   }
 }
 
+/**
+ * Fetch MovieBox trending catalog
+ */
+export async function movieboxTrending(page = 1, pageSize = 20) {
+  try {
+    const token = await getVisitorToken();
+    const res = await apiRequest(
+      "POST",
+      "/wefeed-mobile-bff/subject-api/trending",
+      {},
+      { page: Number(page), pageSize: Number(pageSize) },
+      token,
+    );
+    const items = res?.data?.items || res?.items || [];
+    return items.map(formatMovieboxItem).filter(Boolean);
+  } catch (e) {
+    console.log("[moviebox] trending error, falling back to search:", e.message);
+    // Fallback: search popular titles
+    const searchItems = await movieboxSearch("Avengers");
+    return searchItems.map(formatMovieboxItem).filter(Boolean);
+  }
+}
+
+/**
+ * Extract direct streams for movies and TV series
+ */
 export async function movieboxExtract(type, tmdbId, season = 1, episode = 1) {
   try {
     const streams = [];
+    const isTV = type === "tv" || type === "show";
 
-    // 1. Fetch direct MovieBox/FebBox CDN streams via VidLink WASM token pipeline
+    // 1. Fetch direct MovieBox / FebBox CDN streams via VidLink WASM token pipeline
     try {
       const vidlinkStreams = await vidlinkExtract(type, tmdbId, season, episode);
       if (vidlinkStreams && vidlinkStreams.length) {
-        streams.push(...vidlinkStreams.map((s) => ({
-          ...s,
-          provider: "moviebox",
-          providerName: s.quality ? `MovieBox CDN (${s.quality})` : "MovieBox CDN",
-        })));
+        streams.push(
+          ...vidlinkStreams.map((s) => ({
+            ...s,
+            provider: "moviebox",
+            providerName: s.quality ? `MovieBox CDN (${s.quality})` : "MovieBox CDN",
+          })),
+        );
       }
     } catch (_) {}
 
     // 2. Direct MovieBox API search for standalone high-speed AWS CloudFront MP4 streams
-    if (type === "movie" && tmdbId) {
+    if (tmdbId) {
       try {
         const { tmdb } = await import("./tmdb.js");
-        const meta = await tmdb(`/movie/${tmdbId}`);
-        const title = meta?.title || meta?.original_title;
+        const meta = await tmdb(`/${isTV ? "tv" : "movie"}/${tmdbId}`);
+        const title = meta?.name || meta?.title || meta?.original_name || meta?.original_title;
+
         if (title) {
           const searchItems = await movieboxSearch(title);
-          const match = searchItems.find((i) => (i.title || "").toLowerCase() === title.toLowerCase()) || searchItems[0];
+          const match =
+            searchItems.find(
+              (i) =>
+                (i.title || "").toLowerCase() === title.toLowerCase() &&
+                (isTV ? i.subjectType === 2 : i.subjectType === 1),
+            ) ||
+            searchItems.find((i) => (i.title || "").toLowerCase() === title.toLowerCase()) ||
+            searchItems[0];
+
           for (const detector of match?.resourceDetectors || []) {
+            // Check if detector or title matches season/episode for TV
+            const detLink = detector.resourceLink || "";
+            const matchesEpisode =
+              !isTV ||
+              detLink.includes(`S${season}E${episode}`) ||
+              detLink.includes(`S0${season}E0${episode}`) ||
+              detLink.includes(`S0${season}E${episode}`) ||
+              detLink.includes(`S${season}E0${episode}`) ||
+              detector.totalEpisode === 1;
+
+            if (!matchesEpisode && isTV) continue;
+
             for (const r of detector.resolutionList || []) {
-              if (r.resourceLink) {
+              const resMatches =
+                !isTV ||
+                (r.se === season && r.ep === episode) ||
+                (r.se === 0 && r.ep === 0 && matchesEpisode) ||
+                (r.title && r.title.includes(`E${episode}`));
+
+              if (resMatches && r.resourceLink) {
                 streams.push({
                   url: r.resourceLink,
                   type: "file",
@@ -189,6 +300,18 @@ export async function movieboxExtract(type, tmdbId, season = 1, episode = 1) {
                   size: r.size,
                 });
               }
+            }
+
+            if (detector.downloadUrl && !streams.some((s) => s.url === detector.downloadUrl)) {
+              streams.push({
+                url: detector.downloadUrl,
+                type: "file",
+                quality: "Direct MP4",
+                provider: "moviebox",
+                providerName: "MovieBox Direct MP4",
+                headers: {},
+                size: detector.totalSize,
+              });
             }
           }
         }

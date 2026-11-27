@@ -2,7 +2,7 @@ import { getTopRadioStations, getRadioStationsByCountry, searchRadioStations } f
 import { getChannelEpg, attachEpgToChannels } from "../epg.js";
 import { getCinejoyServers } from "../cinejoy.js";
 import { searchMusic, getLyrics } from "../music.js";
-import { generateClientToken, verifyClientToken, expressSecurityMiddleware } from "../security.js";
+import { generateClientToken, verifyClientToken, expressSecurityMiddleware, getClientCodeSnippet } from "../security.js";
 import { getAllLiveChannels, getLiveCategories, getDirectIptvStreams } from "../livetv.js";
 import { getSportsChannels, getLiveMatches } from "../sports.js";
 import { animeExtract } from "../anime.js";
@@ -10,9 +10,9 @@ import { africanExtract } from "../african.js";
 import { Router } from "express";
 import { Readable } from "stream";
 import { tmdb } from "../tmdb.js";
-import { PROVIDERS, FAST_PROVIDERS, childUrl, scrapeAll, upstreamHeaders } from "../providers.js";
+import { PROVIDERS, FAST_PROVIDERS, childUrl, scrapeFastest, scrapeAll, upstreamHeaders } from "../providers.js";
 import { listPstream, pstreamTasks } from "../pstream.js";
-import { movieboxSearch } from "../moviebox.js";
+import { movieboxSearch, movieboxTrending, formatMovieboxItem, movieboxExtract } from "../moviebox.js";
 import { streamwishExtractUrl } from "../streamwish.js";
 import { voeExtractUrl } from "../voe.js";
 import { getSubtitles, srtToVtt } from "../subtitles.js";
@@ -147,6 +147,12 @@ router.get("/auth/verify", (req, res) => {
   const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress;
   const result = verifyClientToken(token, clientIp);
   res.json(result);
+});
+
+router.get("/auth/client-sdk", (req, res) => {
+  const { platform } = req.query;
+  const snippet = getClientCodeSnippet(platform || "android");
+  res.type("text/plain").send(snippet);
 });
 
 // Apply optional security check
@@ -285,7 +291,9 @@ async function scrape(type, tmdbId, season, episode, fastMode = false) {
     if (full && full.length) streamCache.set(key, full);
   };
 
-  const streams = await scrapeAll(type, tmdbId, season, episode, tasks, onSettled);
+  const streams = fastMode
+    ? await scrapeFastest(type, tmdbId, season, episode, tasks, onSettled)
+    : await scrapeAll(type, tmdbId, season, episode, tasks, onSettled);
   if (streams && streams.length) {
     streamCache.set(key, streams);
   }
@@ -307,6 +315,25 @@ router.get("/stream/fast/:tmdbId/:season/:episode", async (req, res) => {
   try {
     const streams = await scrape("tv", tmdbId, Number(season), Number(episode), true);
     res.json({ fast: true, streams });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/stream/race/:tmdbId", async (req, res) => {
+  try {
+    const streams = await scrape("movie", req.params.tmdbId, null, null, true);
+    res.json({ race: true, streams });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/stream/race/:tmdbId/:season/:episode", async (req, res) => {
+  const { tmdbId, season, episode } = req.params;
+  try {
+    const streams = await scrape("tv", tmdbId, Number(season), Number(episode), true);
+    res.json({ race: true, streams });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -375,11 +402,41 @@ router.get("/sports/channels", async (req, res) => {
 });
 
 router.get("/moviebox/search", async (req, res) => {
-  const { query } = req.query;
-  if (!query) return res.status(400).json({ error: "query required" });
+  const query = req.query.query || req.query.q;
+  if (!query) return res.status(400).json({ error: "query parameter (q or query) required" });
   try {
-    const results = await movieboxSearch(query);
-    res.json({ results });
+    const raw = await movieboxSearch(query);
+    const results = raw.map(formatMovieboxItem).filter(Boolean);
+    res.json({ count: results.length, results });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/moviebox/trending", async (req, res) => {
+  const { page, limit } = req.query;
+  try {
+    const results = await movieboxTrending(page || 1, limit || 20);
+    res.json({ count: results.length, results });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/moviebox/extract/:tmdbId", async (req, res) => {
+  try {
+    const streams = await movieboxExtract("movie", req.params.tmdbId);
+    res.json({ count: streams.length, streams });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/moviebox/extract/:tmdbId/:season/:episode", async (req, res) => {
+  const { tmdbId, season, episode } = req.params;
+  try {
+    const streams = await movieboxExtract("tv", tmdbId, Number(season), Number(episode));
+    res.json({ count: streams.length, streams });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

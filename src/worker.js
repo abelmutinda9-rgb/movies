@@ -2,15 +2,15 @@ import { getTopRadioStations, getRadioStationsByCountry, searchRadioStations } f
 import { getChannelEpg, attachEpgToChannels } from "./epg.js";
 import { getCinejoyServers } from "./cinejoy.js";
 import { searchMusic, getLyrics } from "./music.js";
-import { generateClientToken, verifyClientToken, honoSecurityMiddleware } from "./security.js";
+import { generateClientToken, verifyClientToken, honoSecurityMiddleware, getClientCodeSnippet } from "./security.js";
 import { getAllLiveChannels, getLiveCategories, getDirectIptvStreams } from "./livetv.js";
 import { getSportsChannels, getLiveMatches } from "./sports.js";
 import { Hono } from "hono";
 import { animeExtract } from "./anime.js";
 import { africanExtract } from "./african.js";
 import { tmdb } from "./tmdb.js";
-import { PROVIDERS, FAST_PROVIDERS, childUrl, scrapeAll, upstreamHeaders } from "./providers.js";
-import { movieboxSearch } from "./moviebox.js";
+import { PROVIDERS, FAST_PROVIDERS, childUrl, scrapeFastest, scrapeAll, upstreamHeaders } from "./providers.js";
+import { movieboxSearch, movieboxTrending, formatMovieboxItem, movieboxExtract } from "./moviebox.js";
 import { streamwishExtractUrl } from "./streamwish.js";
 import { voeExtractUrl } from "./voe.js";
 import { getSubtitles, srtToVtt } from "./subtitles.js";
@@ -230,6 +230,12 @@ app.get("/api/auth/verify", (c) => {
   return c.json(result);
 });
 
+app.get("/api/auth/client-sdk", (c) => {
+  const platform = c.req.query("platform") || "android";
+  const snippet = getClientCodeSnippet(platform);
+  return c.text(snippet);
+});
+
 // Optional app token check for subsequent routes
 app.use("/api/*", honoSecurityMiddleware);
 
@@ -356,7 +362,7 @@ app.get("/api/subtitles/vtt", async (c) => {
 
 app.get("/api/stream/fast/:tmdbId", async (c) => {
   try {
-    const streams = await scrapeAll("movie", c.req.param("tmdbId"), null, null, FAST_PROVIDERS);
+    const streams = await scrapeFastest("movie", c.req.param("tmdbId"), null, null, FAST_PROVIDERS);
     return c.json({ fast: true, count: streams.length, streams });
   } catch (e) {
     return c.json({ error: e.message }, 500);
@@ -365,8 +371,26 @@ app.get("/api/stream/fast/:tmdbId", async (c) => {
 
 app.get("/api/stream/fast/:tmdbId/:season/:episode", async (c) => {
   try {
-    const streams = await scrapeAll("show", c.req.param("tmdbId"), c.req.param("season"), c.req.param("episode"), FAST_PROVIDERS);
+    const streams = await scrapeFastest("tv", c.req.param("tmdbId"), Number(c.req.param("season")), Number(c.req.param("episode")), FAST_PROVIDERS);
     return c.json({ fast: true, count: streams.length, streams });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.get("/api/stream/race/:tmdbId", async (c) => {
+  try {
+    const streams = await scrapeFastest("movie", c.req.param("tmdbId"), null, null, FAST_PROVIDERS);
+    return c.json({ race: true, count: streams.length, streams });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.get("/api/stream/race/:tmdbId/:season/:episode", async (c) => {
+  try {
+    const streams = await scrapeFastest("tv", c.req.param("tmdbId"), Number(c.req.param("season")), Number(c.req.param("episode")), FAST_PROVIDERS);
+    return c.json({ race: true, count: streams.length, streams });
   } catch (e) {
     return c.json({ error: e.message }, 500);
   }
@@ -440,8 +464,38 @@ app.get("/api/moviebox/search", async (c) => {
   const q = c.req.query("q") || c.req.query("query");
   if (!q) return c.json({ error: "query required" }, 400);
   try {
-    const results = await movieboxSearch(q);
+    const raw = await movieboxSearch(q);
+    const results = raw.map(formatMovieboxItem).filter(Boolean);
     return c.json({ count: results.length, results });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.get("/api/moviebox/trending", async (c) => {
+  const page = c.req.query("page") || "1";
+  const limit = c.req.query("limit") || "20";
+  try {
+    const results = await movieboxTrending(page, limit);
+    return c.json({ count: results.length, results });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.get("/api/moviebox/extract/:tmdbId", async (c) => {
+  try {
+    const streams = await movieboxExtract("movie", c.req.param("tmdbId"));
+    return c.json({ count: streams.length, streams });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.get("/api/moviebox/extract/:tmdbId/:season/:episode", async (c) => {
+  try {
+    const streams = await movieboxExtract("tv", c.req.param("tmdbId"), Number(c.req.param("season")), Number(c.req.param("episode")));
+    return c.json({ count: streams.length, streams });
   } catch (e) {
     return c.json({ error: e.message }, 500);
   }
